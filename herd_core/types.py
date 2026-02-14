@@ -145,6 +145,30 @@ class ReviewRecord(Entity):
     findings_count: int = 0
 
 
+@dataclass
+class ModelRecord(Entity):
+    """An AI model definition with pricing."""
+
+    name: str = ""
+    provider: str = ""
+    input_cost_per_token: Decimal = Decimal("0")
+    output_cost_per_token: Decimal = Decimal("0")
+    context_window: int = 0
+    target_role: str | None = None
+
+
+@dataclass
+class SprintRecord(Entity):
+    """A sprint/cycle in the project management system."""
+
+    name: str = ""
+    number: int = 0
+    status: str = ""
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    goal: str | None = None
+
+
 # ============================================================
 # Events — immutable, append-only activity ledger records
 # ============================================================
@@ -267,3 +291,14 @@ class ThreadMessage:
     author: str
     text: str
     timestamp: str
+
+
+@dataclass(frozen=True)
+class CommitInfo:
+    """A git commit from RepoAdapter.get_log()."""
+
+    sha: str
+    message: str
+    author: str
+    timestamp: datetime
+    branch: str | None = None

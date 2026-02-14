@@ -16,6 +16,8 @@ from herd_core.adapters import (
     StoreAdapter,
     TicketAdapter,
 )
+from herd_core.config import HerdConfig
+from herd_core.queries import OperationalQueries
 from herd_core.types import (
     # Base classes
     Entity,
@@ -26,8 +28,10 @@ from herd_core.types import (
     # Entities
     AgentRecord,
     DecisionRecord,
+    ModelRecord,
     PRRecord,
     ReviewRecord,
+    SprintRecord,
     TicketRecord,
     # Events
     LifecycleEvent,
@@ -36,6 +40,7 @@ from herd_core.types import (
     TicketEvent,
     TokenEvent,
     # Adapter return types
+    CommitInfo,
     PostResult,
     SpawnContext,
     SpawnResult,
@@ -50,6 +55,10 @@ __all__ = [
     "TicketAdapter",
     "RepoAdapter",
     "NotifyAdapter",
+    # Configuration
+    "HerdConfig",
+    # Query layer
+    "OperationalQueries",
     # Base classes
     "Entity",
     "Event",
@@ -62,6 +71,8 @@ __all__ = [
     "PRRecord",
     "DecisionRecord",
     "ReviewRecord",
+    "ModelRecord",
+    "SprintRecord",
     # Events
     "LifecycleEvent",
     "TicketEvent",
@@ -74,4 +85,5 @@ __all__ = [
     "TransitionResult",
     "PostResult",
     "ThreadMessage",
+    "CommitInfo",
 ]

@@ -9,9 +9,10 @@ checkouts between concurrent agents.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
-from herd_core.types import PRRecord
+from herd_core.types import CommitInfo, PRRecord
 
 
 @runtime_checkable
@@ -70,4 +71,23 @@ class RepoAdapter(Protocol):
 
     def add_pr_comment(self, pr_id: str, body: str) -> None:
         """Add a review comment to a pull request."""
+        ...
+
+    def get_log(
+        self,
+        *,
+        since: datetime | None = None,
+        branch: str | None = None,
+        limit: int = 50,
+    ) -> list[CommitInfo]:
+        """Get commit log.
+
+        Args:
+            since: Only commits after this timestamp.
+            branch: Branch to read log from. Defaults to current branch.
+            limit: Maximum number of commits to return.
+
+        Returns:
+            List of commits, most recent first.
+        """
         ...

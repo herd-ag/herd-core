@@ -9,6 +9,7 @@ communication (e.g., Architect responding to agent posts).
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Protocol, runtime_checkable
 
 from herd_core.types import PostResult, ThreadMessage
@@ -62,4 +63,25 @@ class NotifyAdapter(Protocol):
         thread_id: str,
     ) -> list[ThreadMessage]:
         """Fetch all replies in a thread (excluding the parent message)."""
+        ...
+
+    def search(
+        self,
+        query: str,
+        *,
+        channel: str | None = None,
+        since: datetime | None = None,
+        limit: int = 50,
+    ) -> list[ThreadMessage]:
+        """Search messages in a channel.
+
+        Args:
+            query: Search query string.
+            channel: Restrict to a specific channel.
+            since: Only messages after this timestamp.
+            limit: Maximum results to return.
+
+        Returns:
+            Matching messages, most recent first.
+        """
         ...

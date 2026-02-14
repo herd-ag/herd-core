@@ -99,6 +99,13 @@ class StoreAdapter(Protocol):
         """
         ...
 
+    def count(self, entity_type: type[E], **filters: Any) -> int:
+        """Count entities matching filters.
+
+        More efficient than len(list()) for large datasets.
+        """
+        ...
+
     def events(self, event_type: type[Event], **filters: Any) -> list[Event]:
         """Query the activity ledger.
 
