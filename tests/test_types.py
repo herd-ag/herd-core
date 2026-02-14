@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 
 import pytest
@@ -52,8 +52,8 @@ class TestEntityBase:
     def test_entity_is_mutable(self) -> None:
         """Entities can be modified after creation."""
         entity = Entity(id="test-001")
-        entity.created_at = datetime.utcnow()
-        entity.modified_at = datetime.utcnow()
+        entity.created_at = datetime.now(timezone.utc)
+        entity.modified_at = datetime.now(timezone.utc)
         assert entity.created_at is not None
         assert entity.modified_at is not None
 
@@ -219,6 +219,7 @@ class TestEventSubclasses:
         event = TokenEvent(
             entity_id="DBC-137",
             event_type="usage",
+            model="claude-sonnet-4-5",
             input_tokens=1000,
             output_tokens=500,
             total_tokens=1500,
@@ -226,11 +227,15 @@ class TestEventSubclasses:
         )
         assert event.total_tokens == 1500
         assert event.cost_usd == Decimal("0.05")
+        assert event.model == "claude-sonnet-4-5"
 
     def test_token_event_is_frozen(self) -> None:
         """TokenEvent is immutable."""
         event = TokenEvent(
-            entity_id="DBC-137", event_type="usage", total_tokens=1500
+            entity_id="DBC-137",
+            event_type="usage",
+            model="claude-sonnet-4-5",
+            total_tokens=1500,
         )
         with pytest.raises(FrozenInstanceError):
             event.total_tokens = 2000  # type: ignore[misc]
@@ -291,7 +296,7 @@ class TestReturnTypes:
             model="claude-sonnet-4-5",
             worktree="/tmp/test",
             branch="test-branch",
-            spawned_at=datetime.utcnow(),
+            spawned_at=datetime.now(timezone.utc),
         )
         with pytest.raises(FrozenInstanceError):
             result.agent = "pikasso"  # type: ignore[misc]
@@ -329,7 +334,7 @@ class TestReturnTypes:
             sha="abc123",
             message="Test commit",
             author="Grunt",
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
         )
         with pytest.raises(FrozenInstanceError):
             commit.message = "Modified"  # type: ignore[misc]

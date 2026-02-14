@@ -15,7 +15,7 @@ Usage:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -140,6 +140,8 @@ class OperationalQueries:
             by_agent[e.instance_id] = by_agent.get(
                 e.instance_id, Decimal("0")
             ) + e.cost_usd
+            if e.model:
+                by_model[e.model] = by_model.get(e.model, Decimal("0")) + e.cost_usd
 
         return CostSummary(
             total_tokens=total_tokens,
@@ -186,7 +188,7 @@ class OperationalQueries:
         )
         if not threshold_hours:
             return agents
-        cutoff = datetime.utcnow().timestamp() - (threshold_hours * 3600)
+        cutoff = datetime.now(timezone.utc).timestamp() - (threshold_hours * 3600)
         stale = []
         for a in agents:
             events = self._store.events(

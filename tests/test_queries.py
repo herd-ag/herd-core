@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from herd_core.queries import OperationalQueries
@@ -62,7 +62,7 @@ class TestTicketTimeline:
             previous_status="backlog",
             new_status="in_progress",
             elapsed_minutes=30.0,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         event2 = TicketEvent(
             entity_id="DBC-137",
@@ -70,7 +70,7 @@ class TestTicketTimeline:
             previous_status="in_progress",
             new_status="done",
             elapsed_minutes=120.0,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         mock_store.append(event1)
         mock_store.append(event2)
@@ -94,7 +94,7 @@ class TestTicketTimeline:
             previous_status="backlog",
             new_status="in_progress",
             elapsed_minutes=None,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         mock_store.append(event)
 
@@ -114,21 +114,23 @@ class TestCostSummary:
             entity_id="DBC-137",
             event_type="usage",
             instance_id="agent-001",
+            model="claude-sonnet-4-5",
             input_tokens=1000,
             output_tokens=500,
             total_tokens=1500,
             cost_usd=Decimal("0.05"),
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         event2 = TokenEvent(
             entity_id="DBC-138",
             event_type="usage",
             instance_id="agent-002",
+            model="claude-opus-4-6",
             input_tokens=2000,
             output_tokens=1000,
             total_tokens=3000,
             cost_usd=Decimal("0.10"),
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         mock_store.append(event1)
         mock_store.append(event2)
@@ -140,10 +142,12 @@ class TestCostSummary:
         assert summary.total_cost_usd == Decimal("0.15")
         assert summary.by_agent["agent-001"] == Decimal("0.05")
         assert summary.by_agent["agent-002"] == Decimal("0.10")
+        assert summary.by_model["claude-sonnet-4-5"] == Decimal("0.05")
+        assert summary.by_model["claude-opus-4-6"] == Decimal("0.10")
 
     def test_respects_since_filter(self, mock_store):
         """cost_summary(since=...) respects time filter."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         yesterday = now - timedelta(days=1)
         two_days_ago = now - timedelta(days=2)
 
@@ -152,6 +156,7 @@ class TestCostSummary:
             entity_id="DBC-137",
             event_type="usage",
             instance_id="agent-001",
+            model="claude-sonnet-4-5",
             total_tokens=1000,
             cost_usd=Decimal("0.05"),
             created_at=two_days_ago,
@@ -161,6 +166,7 @@ class TestCostSummary:
             entity_id="DBC-138",
             event_type="usage",
             instance_id="agent-002",
+            model="claude-opus-4-6",
             total_tokens=2000,
             cost_usd=Decimal("0.10"),
             created_at=now,
@@ -174,6 +180,63 @@ class TestCostSummary:
         assert summary.total_tokens == 2000
         assert summary.total_cost_usd == Decimal("0.10")
         assert summary.period_start == yesterday
+
+    def test_populates_by_model_when_model_set(self, mock_store):
+        """cost_summary() populates by_model when TokenEvents have model field."""
+        event1 = TokenEvent(
+            entity_id="DBC-137",
+            event_type="usage",
+            instance_id="agent-001",
+            model="claude-sonnet-4-5",
+            total_tokens=1500,
+            cost_usd=Decimal("0.05"),
+            created_at=datetime.now(timezone.utc),
+        )
+        event2 = TokenEvent(
+            entity_id="DBC-138",
+            event_type="usage",
+            instance_id="agent-002",
+            model="claude-sonnet-4-5",
+            total_tokens=2000,
+            cost_usd=Decimal("0.07"),
+            created_at=datetime.now(timezone.utc),
+        )
+        event3 = TokenEvent(
+            entity_id="DBC-139",
+            event_type="usage",
+            instance_id="agent-003",
+            model="claude-opus-4-6",
+            total_tokens=3000,
+            cost_usd=Decimal("0.15"),
+            created_at=datetime.now(timezone.utc),
+        )
+        mock_store.append(event1)
+        mock_store.append(event2)
+        mock_store.append(event3)
+
+        queries = OperationalQueries(mock_store)
+        summary = queries.cost_summary()
+
+        assert summary.by_model["claude-sonnet-4-5"] == Decimal("0.12")
+        assert summary.by_model["claude-opus-4-6"] == Decimal("0.15")
+
+    def test_by_model_empty_when_no_model_set(self, mock_store):
+        """cost_summary() has empty by_model when TokenEvents have no model."""
+        event = TokenEvent(
+            entity_id="DBC-137",
+            event_type="usage",
+            instance_id="agent-001",
+            model="",
+            total_tokens=1500,
+            cost_usd=Decimal("0.05"),
+            created_at=datetime.now(timezone.utc),
+        )
+        mock_store.append(event)
+
+        queries = OperationalQueries(mock_store)
+        summary = queries.cost_summary()
+
+        assert summary.by_model == {}
 
 
 class TestReviewSummary:
@@ -277,7 +340,7 @@ class TestStaleAgents:
 
     def test_identifies_agents_with_no_recent_events(self, mock_store):
         """stale_agents() identifies agents with no recent activity."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         old_timestamp = now - timedelta(hours=48)
 
         # Agent with recent activity

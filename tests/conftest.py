@@ -5,7 +5,7 @@ Provides mock adapters and sample entities/events for testing.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -79,7 +79,7 @@ class MockStore:
             self._entities[entity_type] = {}
 
         # Set modified_at
-        record.modified_at = datetime.utcnow()
+        record.modified_at = datetime.now(timezone.utc)
 
         self._entities[entity_type][record.id] = record
         return record.id
@@ -88,7 +88,7 @@ class MockStore:
         """Soft-delete an entity."""
         store = self._entities.get(entity_type, {})
         if id in store:
-            store[id].deleted_at = datetime.utcnow()
+            store[id].deleted_at = datetime.now(timezone.utc)
 
     def append(self, event: Event) -> None:
         """Append an immutable event."""

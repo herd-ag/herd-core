@@ -222,6 +222,7 @@ class TokenEvent(Event):
     """Token usage and cost tracking."""
 
     instance_id: str = ""
+    model: str = ""
     input_tokens: int = 0
     output_tokens: int = 0
     total_tokens: int = 0

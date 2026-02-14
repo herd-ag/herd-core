@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from herd_core.adapters import (
@@ -167,7 +167,7 @@ class TestAgentAdapterProtocol:
                     model="test-model",
                     worktree="/tmp/test",
                     branch="test-branch",
-                    spawned_at=datetime.utcnow(),
+                    spawned_at=datetime.now(timezone.utc),
                 )
 
             def get_status(self, instance_id: str) -> AgentRecord:
@@ -199,7 +199,7 @@ class TestAgentAdapterProtocol:
                     model="test-model",
                     worktree="/tmp/test",
                     branch="test-branch",
-                    spawned_at=datetime.utcnow(),
+                    spawned_at=datetime.now(timezone.utc),
                 )
 
         agent = NonConformingAgent()
