@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Protocol, runtime_checkable
 
-from herd_core.types import TicketState, TransitionResult
+from herd_core.types import TicketRecord, TransitionResult
 
 
 @runtime_checkable
@@ -24,7 +24,7 @@ class TicketAdapter(Protocol):
     - Blocking is a first-class concept with blocker references.
     """
 
-    def get(self, ticket_id: str) -> TicketState:
+    def get(self, ticket_id: str) -> TicketRecord:
         """Fetch current state of a ticket."""
         ...
 
@@ -71,6 +71,6 @@ class TicketAdapter(Protocol):
         """Add a comment to a ticket."""
         ...
 
-    def list_tickets(self, **filters: Any) -> list[TicketState]:
+    def list_tickets(self, **filters: Any) -> list[TicketRecord]:
         """List tickets matching filters (status, assignee, project, etc.)."""
         ...

@@ -17,16 +17,29 @@ from herd_core.adapters import (
     TicketAdapter,
 )
 from herd_core.types import (
+    # Base classes
+    Entity,
+    Event,
+    # Enums
     AgentState,
-    AgentStatus,
+    TicketPriority,
+    # Entities
+    AgentRecord,
+    DecisionRecord,
+    PRRecord,
+    ReviewRecord,
+    TicketRecord,
+    # Events
+    LifecycleEvent,
+    PREvent,
+    ReviewEvent,
+    TicketEvent,
+    TokenEvent,
+    # Adapter return types
     PostResult,
-    PRState,
-    QueryResult,
     SpawnContext,
     SpawnResult,
     ThreadMessage,
-    TicketPriority,
-    TicketState,
     TransitionResult,
 )
 
@@ -37,16 +50,28 @@ __all__ = [
     "TicketAdapter",
     "RepoAdapter",
     "NotifyAdapter",
-    # Types
+    # Base classes
+    "Entity",
+    "Event",
+    # Enums
     "AgentState",
-    "AgentStatus",
+    "TicketPriority",
+    # Entities
+    "AgentRecord",
+    "TicketRecord",
+    "PRRecord",
+    "DecisionRecord",
+    "ReviewRecord",
+    # Events
+    "LifecycleEvent",
+    "TicketEvent",
+    "PREvent",
+    "ReviewEvent",
+    "TokenEvent",
+    # Adapter return types
     "SpawnContext",
     "SpawnResult",
-    "TicketPriority",
-    "TicketState",
     "TransitionResult",
-    "PRState",
     "PostResult",
     "ThreadMessage",
-    "QueryResult",
 ]

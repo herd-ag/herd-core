@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from herd_core.types import AgentStatus, SpawnContext, SpawnResult
+from herd_core.types import AgentRecord, SpawnContext, SpawnResult
 
 
 @runtime_checkable
@@ -43,8 +43,8 @@ class AgentAdapter(Protocol):
         """
         ...
 
-    def get_status(self, instance_id: str) -> AgentStatus:
-        """Get current status of an agent instance."""
+    def get_status(self, instance_id: str) -> AgentRecord:
+        """Get current state of an agent instance."""
         ...
 
     def stop(self, instance_id: str) -> None:

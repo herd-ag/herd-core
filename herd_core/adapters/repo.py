@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
-from herd_core.types import PRState
+from herd_core.types import PRRecord
 
 
 @runtime_checkable
@@ -60,7 +60,7 @@ class RepoAdapter(Protocol):
         """Create a pull request. Returns the PR identifier."""
         ...
 
-    def get_pr(self, pr_id: str) -> PRState:
+    def get_pr(self, pr_id: str) -> PRRecord:
         """Get current state of a pull request."""
         ...
 
