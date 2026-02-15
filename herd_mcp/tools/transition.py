@@ -71,18 +71,27 @@ async def execute(
         # Auto-register from Linear if not found and looks like Linear ID
         if not ticket and linear_client.is_linear_identifier(ticket_id):
             logger.info(f"Ticket {ticket_id} not found in DB, attempting Linear fetch")
+            from herd_core.types import TicketRecord
+
+            tr: TicketRecord | None = None
             if registry and registry.tickets:
-                linear_issue = registry.tickets.get(ticket_id)
-            else:
-                linear_issue = linear_client.get_issue(ticket_id)
+                try:
+                    tr = registry.tickets.get(ticket_id)
+                except Exception:
+                    pass
 
-            if linear_issue:
-                # Extract project code from Linear if available
-                project_code = None
-                if linear_issue.get("project"):
-                    project_code = linear_issue["project"].get("name")
+            if tr is None:
+                d = linear_client.get_issue(ticket_id)
+                if d:
+                    tr = TicketRecord(
+                        id=d.get("identifier", d.get("id", "")),
+                        title=d.get("title", ""),
+                        description=d.get("description"),
+                        status=(d.get("state") or {}).get("name", ""),
+                        project=(d.get("project") or {}).get("name"),
+                    )
 
-                # Insert into ticket_def
+            if tr:
                 conn.execute(
                     """
                     INSERT INTO herd.ticket_def
@@ -90,12 +99,7 @@ async def execute(
                        project_code, created_at, modified_at)
                     VALUES (?, ?, ?, 'backlog', ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
                     """,
-                    [
-                        linear_issue["identifier"],
-                        linear_issue.get("title", ""),
-                        linear_issue.get("description", ""),
-                        project_code,
-                    ],
+                    [tr.id, tr.title or "", tr.description or "", tr.project],
                 )
                 logger.info(f"Auto-registered ticket {ticket_id} from Linear")
 
