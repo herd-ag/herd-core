@@ -28,6 +28,12 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
     "Topic :: Software Development :: Libraries :: Application Frameworks",
 ]
+dependencies = [
+    "mcp>=1.0",
+    "duckdb>=1.0",
+    "aiohttp>=3.9",
+    "slack_sdk>=3.27",
+]
 
 [project.urls]
 Homepage = "https://github.com/herd-ag/herd-core"
@@ -36,4 +42,17 @@ Repository = "https://github.com/herd-ag/herd-core"
 Issues = "https://github.com/herd-ag/herd-core/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0"]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.23"]
+adapters = [
+    "herd-notify-slack @ git+https://github.com/herd-ag/herd-notify-slack.git",
+    "herd-ticket-linear @ git+https://github.com/herd-ag/herd-ticket-linear.git",
+    "herd-repo-github @ git+https://github.com/herd-ag/herd-repo-github.git",
+    "herd-agent-claude @ git+https://github.com/herd-ag/herd-agent-claude.git",
+    "herd-store-duckdb @ git+https://github.com/herd-ag/herd-store-duckdb.git",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+[tool.hatch.build.targets.wheel]
+packages = ["herd_core", "herd_mcp"]

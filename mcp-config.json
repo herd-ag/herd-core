@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "herd": {
+      "command": "python3",
+      "args": [
+        "-m",
+        "herd_mcp"
+      ],
+      "env": {
+        "HERD_AGENT_NAME": "YOUR_AGENT_NAME_HERE",
+        "HERD_DB_PATH": ".herd/herd.duckdb"
+      },
+      "description": "Herd operational MCP server - provides tools for team coordination, ticket management, and metrics tracking"
+    }
+  }
+}
