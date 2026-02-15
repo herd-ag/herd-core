@@ -8,7 +8,7 @@
       ],
       "env": {
         "HERD_AGENT_NAME": "YOUR_AGENT_NAME_HERE",
-        "HERD_DB_PATH": ".herd/herd.duckdb"
+        "HERD_DB_PATH": ".herd/herddb.duckdb"
       },
       "description": "Herd operational MCP server - provides tools for team coordination, ticket management, and metrics tracking"
     }

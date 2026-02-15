@@ -16,6 +16,14 @@ from .server import mcp
 
 def main() -> None:
     """Main entry point with subcommand support."""
+    # Load .env if python-dotenv is available
+    try:
+        from dotenv import load_dotenv
+
+        load_dotenv()
+    except ImportError:
+        pass
+
     if len(sys.argv) > 1 and sys.argv[1] == "serve":
         from .rest_server import run_server
 

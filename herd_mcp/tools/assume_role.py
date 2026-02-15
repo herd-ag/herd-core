@@ -16,6 +16,7 @@ from ._helpers import (
     extract_craft_section,
     find_repo_root,
     get_handoffs,
+    get_herd_content_path,
     get_linear_tickets,
     get_recent_hdrs,
     read_file_safe,
@@ -178,14 +179,20 @@ async def execute(agent_name: str, registry: AdapterRegistry | None = None) -> s
         repo_root = Path.cwd()
 
     # Read role file
-    role_path = repo_root / ".herd" / "roles" / f"{agent_lower}.md"
-    role_content = read_file_safe(role_path)
+    role_path = get_herd_content_path(f"roles/{agent_lower}.md")
+    if role_path:
+        role_content = read_file_safe(role_path)
+    else:
+        role_content = None
     if role_content is None:
-        role_content = f"(Role file not found: {role_path})"
+        role_content = f"(Role file not found for agent: {agent_lower})"
 
     # Read craft section
-    craft_path = repo_root / ".herd" / "craft.md"
-    craft_full = read_file_safe(craft_path)
+    craft_path = get_herd_content_path("craft.md")
+    if craft_path:
+        craft_full = read_file_safe(craft_path)
+    else:
+        craft_full = None
     craft_section = ""
     if craft_full:
         craft_section = extract_craft_section(craft_full, agent_lower)

@@ -63,6 +63,39 @@ def find_repo_root() -> Path:
     raise RuntimeError("Could not find repository root (.git directory)")
 
 
+def get_herd_content_path(subpath: str) -> Path | None:
+    """Resolve a .herd/ content path with fallback chain.
+
+    Resolution order:
+    1. Project root .herd/ (project-specific overrides)
+    2. Package root .herd/ (canonical defaults from herd-core install)
+
+    Args:
+        subpath: Path relative to .herd/, e.g. "roles/steve.md" or "craft.md"
+
+    Returns:
+        Resolved Path if found, None if not found anywhere.
+    """
+    # 1. Try project root
+    try:
+        repo_root = find_repo_root()
+        project_path = repo_root / ".herd" / subpath
+        if project_path.exists():
+            return project_path
+    except RuntimeError:
+        pass
+
+    # 2. Try package root (works for editable and git installs)
+    package_root = (
+        Path(__file__).resolve().parent.parent.parent
+    )  # herd_mcp/tools/_helpers.py -> repo root
+    package_path = package_root / ".herd" / subpath
+    if package_path.exists():
+        return package_path
+
+    return None
+
+
 def read_file_safe(path: Path) -> str | None:
     """Read a file safely, returning None on any error.
 

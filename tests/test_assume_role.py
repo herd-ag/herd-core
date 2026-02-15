@@ -42,11 +42,30 @@ def mock_repo(tmp_path):
 
 
 def _patch_repo_root(repo_path: Path):
-    """Return a patch for find_repo_root to use the given path."""
-    return patch(
-        "herd_mcp.tools.assume_role.find_repo_root",
-        return_value=repo_path,
-    )
+    """Return a patch for find_repo_root to use the given path.
+
+    Patches in both locations:
+    - assume_role.find_repo_root (for direct call in assume_role.execute)
+    - _helpers.find_repo_root (for call inside get_herd_content_path)
+    """
+    from unittest.mock import patch as _patch
+
+    # Create a stack of patches
+    class MultiPatch:
+        def __enter__(self):
+            self.patches = [
+                _patch("herd_mcp.tools.assume_role.find_repo_root", return_value=repo_path),
+                _patch("herd_mcp.tools._helpers.find_repo_root", return_value=repo_path),
+            ]
+            for p in self.patches:
+                p.__enter__()
+            return self
+
+        def __exit__(self, *args):
+            for p in reversed(self.patches):
+                p.__exit__(*args)
+
+    return MultiPatch()
 
 
 def _patch_linear_tickets(tickets=None):
@@ -133,14 +152,20 @@ async def test_assume_case_insensitive(mock_repo):
 
 @pytest.mark.asyncio
 async def test_assume_missing_role_file(mock_repo):
-    """Test graceful fallback when role file is missing."""
+    """Test fallback to package defaults when role file is missing from project.
+
+    When fresco.md is not in the project .herd/roles/, it should fall back
+    to the package-provided default role file.
+    """
     with _patch_repo_root(mock_repo), _patch_linear_tickets(), _patch_git_log():
         result = await assume_role.execute("fresco")
 
     assert "You are Fresco." in result
-    assert "Role file not found" in result
-    # Should not crash
+    # Should find the package default role file, not error
     assert "## Role" in result
+    assert "# Fresco" in result
+    # Should not crash even though craft section is missing for fresco
+    assert "## Craft Standards" in result
 
 
 @pytest.mark.asyncio
