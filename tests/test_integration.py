@@ -238,7 +238,7 @@ class TestSeedScript:
 
         # Counts should be the same (no duplicates)
         assert count1 == count2
-        assert count1 == 6  # mini-mao, grunt, pikasso, wardenstein, shakesquill, gauss
+        assert count1 == 8  # steve, leonardo, mason, fresco, wardenstein, scribe, vigil, rook
 
     def test_seed_script_is_idempotent_for_models(self, temp_db):
         """Test that running seed script multiple times doesn't create duplicate models."""
@@ -284,7 +284,7 @@ class TestSeedScript:
               (agent_code, agent_role, agent_status, agent_branch_prefix,
                agent_email, default_model_code, created_at, modified_at)
             VALUES
-              ('grunt', 'backend', 'active', 'old/prefix',
+              ('mason', 'backend', 'active', 'old/prefix',
                'old@email.com', 'claude-haiku-4', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
             """)
 
@@ -297,11 +297,11 @@ class TestSeedScript:
         result = temp_db.execute("""
             SELECT agent_branch_prefix, agent_email, default_model_code
             FROM herd.agent_def
-            WHERE agent_code = 'grunt'
+            WHERE agent_code = 'mason'
             """).fetchone()
 
-        assert result[0] == "herd/grunt"  # Updated prefix
-        assert result[1] == "grunt@herd.local"  # Updated email
+        assert result[0] == "herd/mason"  # Updated prefix
+        assert result[1] == "mason@herd.local"  # Updated email
         assert result[2] == "claude-sonnet-4-5"  # Updated model
 
 

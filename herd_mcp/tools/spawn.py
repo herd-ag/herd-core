@@ -48,7 +48,7 @@ def _create_worktree(
 
     Args:
         ticket_id: Linear ticket ID (e.g., DBC-126).
-        agent_code: Agent code (e.g., grunt, pikasso).
+        agent_code: Agent code (e.g., mason, fresco).
         repo_root: Repository root path.
         repo_adapter: Optional RepoAdapter for git operations.
 
@@ -112,19 +112,21 @@ def _extract_craft_section(craft_content: str, agent_code: str) -> str:
 
     Args:
         craft_content: Full contents of craft.md.
-        agent_code: Agent code (e.g., grunt, pikasso).
+        agent_code: Agent code (e.g., mason, fresco).
 
     Returns:
         Agent's section from craft.md or empty string if not found.
     """
     # Map agent codes to their section titles
     section_map = {
-        "grunt": "## Grunt — Backend Craft Standards",
-        "pikasso": "## Pikasso — Frontend Craft Standards",
+        "mason": "## Mason — Backend Craft Standards",
+        "fresco": "## Fresco — Frontend Craft Standards",
         "wardenstein": "## Wardenstein — QA Craft Standards",
-        "shakesquill": "## Shakesquill — Writing & Documentation Standards",
-        "gauss": "## Gauss — Data Visualization & Analytics Craft Standards",
-        "mini-mao": "## Mini-Mao — Coordination Craft Standards",
+        "scribe": "## Scribe — Documentation Standards",
+        "steve": "## Steve — Coordination Craft Standards",
+        "leonardo": "## Leonardo — Coordination Craft Standards",
+        "vigil": "## Vigil — Automated QA Standards",
+        "rook": "## Rook — Mechanical Execution Standards",
     }
 
     section_header = section_map.get(agent_code)

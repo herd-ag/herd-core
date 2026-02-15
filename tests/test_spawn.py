@@ -19,16 +19,16 @@ def seeded_db(in_memory_db):
         INSERT INTO herd.agent_def
           (agent_code, agent_role, agent_status, default_model_code, created_at)
         VALUES
-          ('grunt', 'backend', 'active', 'claude-sonnet-4', CURRENT_TIMESTAMP),
-          ('pikasso', 'frontend', 'active', 'claude-opus-4', CURRENT_TIMESTAMP),
-          ('mini-mao', 'architect', 'active', 'claude-opus-4', CURRENT_TIMESTAMP)
+          ('mason', 'backend', 'active', 'claude-sonnet-4', CURRENT_TIMESTAMP),
+          ('fresco', 'frontend', 'active', 'claude-opus-4', CURRENT_TIMESTAMP),
+          ('steve', 'coordinator', 'active', 'claude-opus-4', CURRENT_TIMESTAMP)
         """)
 
-    # Insert a current instance for mini-mao (spawner)
+    # Insert a current instance for steve (spawner)
     conn.execute("""
         INSERT INTO herd.agent_instance
           (agent_instance_code, agent_code, model_code, agent_instance_started_at)
-        VALUES ('inst-mao-001', 'mini-mao', 'claude-opus-4', CURRENT_TIMESTAMP)
+        VALUES ('inst-steve-001', 'steve', 'claude-opus-4', CURRENT_TIMESTAMP)
         """)
 
     yield conn
@@ -45,17 +45,17 @@ async def test_spawn_single_agent(seeded_db):
             count=1,
             role="backend",
             model=None,
-            agent_name="mini-mao",
+            agent_name="steve",
         )
 
         assert result["spawned"] == 1
         assert len(result["agents"]) == 1
         assert result["agents"][0].startswith("inst-")
         assert result["role"] == "backend"
-        assert result["agent_code"] == "grunt"
+        assert result["agent_code"] == "mason"
         assert result["model"] == "claude-sonnet-4"  # Default from agent_def
-        assert result["spawned_by"] == "mini-mao"
-        assert result["spawned_by_instance"] == "inst-mao-001"
+        assert result["spawned_by"] == "steve"
+        assert result["spawned_by_instance"] == "inst-steve-001"
 
     # Verify instance was created
     instance = seeded_db.execute(
@@ -63,7 +63,7 @@ async def test_spawn_single_agent(seeded_db):
         [result["agents"][0]],
     ).fetchone()
     assert instance is not None
-    assert instance[0] == "grunt"
+    assert instance[0] == "mason"
     assert instance[1] == "claude-sonnet-4"
 
     # Verify lifecycle activity was recorded
@@ -77,7 +77,7 @@ async def test_spawn_single_agent(seeded_db):
     ).fetchone()
     assert activity is not None
     assert activity[0] == "spawned"
-    assert "mini-mao" in activity[1]
+    assert "steve" in activity[1]
 
 
 @pytest.mark.asyncio
@@ -91,16 +91,16 @@ async def test_spawn_multiple_agents(seeded_db):
             count=3,
             role="frontend",
             model=None,
-            agent_name="mini-mao",
+            agent_name="steve",
         )
 
         assert result["spawned"] == 3
         assert len(result["agents"]) == 3
-        assert result["agent_code"] == "pikasso"
+        assert result["agent_code"] == "fresco"
 
     # Verify all instances were created
     count = seeded_db.execute(
-        "SELECT COUNT(*) FROM herd.agent_instance WHERE agent_code = 'pikasso'"
+        "SELECT COUNT(*) FROM herd.agent_instance WHERE agent_code = 'fresco'"
     ).fetchone()[0]
     assert count == 3
 
@@ -116,7 +116,7 @@ async def test_spawn_with_model_override(seeded_db):
             count=1,
             role="backend",
             model="claude-haiku-4",
-            agent_name="mini-mao",
+            agent_name="steve",
         )
 
         assert result["model"] == "claude-haiku-4"  # Override applied
@@ -140,7 +140,7 @@ async def test_spawn_invalid_role(seeded_db):
             count=1,
             role="nonexistent_role",
             model=None,
-            agent_name="mini-mao",
+            agent_name="steve",
         )
 
         assert result["spawned"] == 0
@@ -160,7 +160,7 @@ async def test_spawn_zero_count(seeded_db):
             count=0,
             role="backend",
             model=None,
-            agent_name="mini-mao",
+            agent_name="steve",
         )
 
         assert result["spawned"] == 0
@@ -209,7 +209,7 @@ async def test_spawn_updates_spawned_by_reference(seeded_db):
             count=1,
             role="backend",
             model=None,
-            agent_name="mini-mao",
+            agent_name="steve",
         )
 
         # Verify spawned_by_agent_instance_code is set correctly
@@ -221,7 +221,7 @@ async def test_spawn_updates_spawned_by_reference(seeded_db):
             """,
             [result["agents"][0]],
         ).fetchone()
-        assert instance[0] == "inst-mao-001"
+        assert instance[0] == "inst-steve-001"
 
 
 @pytest.mark.asyncio
@@ -236,7 +236,7 @@ async def test_spawn_multiple_roles_sequentially(seeded_db):
             count=1,
             role="backend",
             model=None,
-            agent_name="mini-mao",
+            agent_name="steve",
         )
 
         # Spawn frontend
@@ -244,22 +244,22 @@ async def test_spawn_multiple_roles_sequentially(seeded_db):
             count=1,
             role="frontend",
             model=None,
-            agent_name="mini-mao",
+            agent_name="steve",
         )
 
-        assert result1["agent_code"] == "grunt"
-        assert result2["agent_code"] == "pikasso"
+        assert result1["agent_code"] == "mason"
+        assert result2["agent_code"] == "fresco"
 
     # Verify both were created
-    grunt_count = seeded_db.execute(
-        "SELECT COUNT(*) FROM herd.agent_instance WHERE agent_code = 'grunt'"
+    mason_count = seeded_db.execute(
+        "SELECT COUNT(*) FROM herd.agent_instance WHERE agent_code = 'mason'"
     ).fetchone()[0]
-    pikasso_count = seeded_db.execute(
-        "SELECT COUNT(*) FROM herd.agent_instance WHERE agent_code = 'pikasso'"
+    fresco_count = seeded_db.execute(
+        "SELECT COUNT(*) FROM herd.agent_instance WHERE agent_code = 'fresco'"
     ).fetchone()[0]
 
-    assert grunt_count == 1
-    assert pikasso_count == 1
+    assert mason_count == 1
+    assert fresco_count == 1
 
 
 @pytest.mark.asyncio
@@ -273,7 +273,7 @@ async def test_spawn_with_ticket_creates_worktree(seeded_db):
     """)
 
     mock_repo_root = Path("/fake/repo")
-    mock_worktree = Path("/private/tmp/grunt-dbc126")
+    mock_worktree = Path("/private/tmp/mason-dbc126")
 
     with patch("herd_mcp.tools.spawn.connection") as mock_context:
         mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
@@ -286,10 +286,10 @@ async def test_spawn_with_ticket_creates_worktree(seeded_db):
                 with patch("herd_mcp.tools.spawn._read_file_safe") as mock_read:
                     # Mock file reads
                     mock_read.side_effect = lambda p: {
-                        mock_repo_root / ".herd" / "roles" / "grunt.md": "# Grunt role",
+                        mock_repo_root / ".herd" / "roles" / "mason.md": "# Mason role",
                         mock_repo_root
                         / ".herd"
-                        / "craft.md": "## All Agents\n\n## Grunt — Backend Craft Standards\nGrunt craft",
+                        / "craft.md": "## All Agents\n\n## Mason — Backend Craft Standards\nMason craft",
                         mock_repo_root / "CLAUDE.md": "# CLAUDE.md content",
                     }.get(p, None)
 
@@ -300,18 +300,18 @@ async def test_spawn_with_ticket_creates_worktree(seeded_db):
                             count=1,
                             role="backend",
                             model=None,
-                            agent_name="mini-mao",
+                            agent_name="steve",
                             ticket_id="DBC-126",
                         )
 
     assert result["spawned"] == 1
     assert len(result["agents"]) == 1
     assert result["ticket_id"] == "DBC-126"
-    assert result["worktree_path"] == "/private/tmp/grunt-dbc126"
-    assert result["branch_name"] == "herd/grunt/dbc-126-herd-spawn"
+    assert result["worktree_path"] == "/private/tmp/mason-dbc126"
+    assert result["branch_name"] == "herd/mason/dbc-126-herd-spawn"
     assert "context_payload" in result
-    assert "# Grunt role" in result["context_payload"]
-    assert "Grunt craft" in result["context_payload"]
+    assert "# Mason role" in result["context_payload"]
+    assert "Mason craft" in result["context_payload"]
     assert "CLAUDE.md content" in result["context_payload"]
     assert "xoxb-test-token" in result["context_payload"]
 
@@ -334,7 +334,7 @@ async def test_spawn_with_ticket_creates_worktree(seeded_db):
 async def test_spawn_with_ticket_auto_registers_from_linear(seeded_db):
     """Test spawning with Linear ticket ID auto-registers ticket."""
     mock_repo_root = Path("/fake/repo")
-    mock_worktree = Path("/private/tmp/grunt-dbc127")
+    mock_worktree = Path("/private/tmp/mason-dbc127")
 
     mock_linear_issue = {
         "identifier": "DBC-127",
@@ -366,7 +366,7 @@ async def test_spawn_with_ticket_auto_registers_from_linear(seeded_db):
                                 count=1,
                                 role="backend",
                                 model=None,
-                                agent_name="mini-mao",
+                                agent_name="steve",
                                 ticket_id="DBC-127",
                             )
 
@@ -393,7 +393,7 @@ async def test_spawn_with_ticket_syncs_to_linear(seeded_db):
     """)
 
     mock_repo_root = Path("/fake/repo")
-    mock_worktree = Path("/private/tmp/grunt-dbc128")
+    mock_worktree = Path("/private/tmp/mason-dbc128")
 
     mock_linear_issue = {
         "identifier": "DBC-128",
@@ -423,7 +423,7 @@ async def test_spawn_with_ticket_syncs_to_linear(seeded_db):
                                 count=1,
                                 role="backend",
                                 model=None,
-                                agent_name="mini-mao",
+                                agent_name="steve",
                                 ticket_id="DBC-128",
                             )
 
@@ -451,7 +451,7 @@ async def test_spawn_with_ticket_handles_missing_ticket(seeded_db):
                     count=1,
                     role="backend",
                     model=None,
-                    agent_name="mini-mao",
+                    agent_name="steve",
                     ticket_id="DBC-999",
                 )
 
@@ -481,7 +481,7 @@ async def test_spawn_with_ticket_handles_worktree_creation_failure(seeded_db):
                     count=1,
                     role="backend",
                     model=None,
-                    agent_name="mini-mao",
+                    agent_name="steve",
                     ticket_id="DBC-130",
                 )
 
@@ -498,32 +498,30 @@ async def test_extract_craft_section():
 ## All Agents — Shared Standards
 Shared content here.
 
-## Grunt — Backend Craft Standards
-Grunt specific content.
-More grunt content.
+## Mason — Backend Craft Standards
+Mason specific content.
+More mason content.
 
-## Pikasso — Frontend Craft Standards
-Pikasso content.
+## Fresco — Frontend Craft Standards
+Fresco content.
 
 ## Wardenstein — QA Craft Standards
 Wardenstein content.
 """
 
-    # Test Grunt extraction
-    grunt_section = spawn._extract_craft_section(craft_content, "grunt")
-    assert "## Grunt — Backend Craft Standards" in grunt_section
-    assert "Grunt specific content" in grunt_section
-    assert "More grunt content" in grunt_section
-    assert "Pikasso" not in grunt_section
+    # Test Mason extraction
+    mason_section = spawn._extract_craft_section(craft_content, "mason")
+    assert "## Mason — Backend Craft Standards" in mason_section
+    assert "Mason specific content" in mason_section
+    assert "More mason content" in mason_section
+    assert "Fresco" not in mason_section
 
-    # Test Pikasso extraction
-    pikasso_section = spawn._extract_craft_section(craft_content, "pikasso")
-    assert "## Pikasso — Frontend Craft Standards" in pikasso_section
-    assert "Pikasso content" in pikasso_section
-    assert "Wardenstein" not in pikasso_section
+    # Test Fresco extraction
+    fresco_section = spawn._extract_craft_section(craft_content, "fresco")
+    assert "## Fresco — Frontend Craft Standards" in fresco_section
+    assert "Fresco content" in fresco_section
+    assert "Wardenstein" not in fresco_section
 
     # Test unknown agent
     unknown_section = spawn._extract_craft_section(craft_content, "unknown")
     assert unknown_section == ""
-
-
