@@ -224,7 +224,9 @@ async def execute(
             if registry and registry.tickets:
                 registry.tickets.transition(ticket_id, "assigned")
                 result["linear_synced"] = True
-                logger.info(f"Synced ticket {ticket_id} assignment to Linear (via adapter)")
+                logger.info(
+                    f"Synced ticket {ticket_id} assignment to Linear (via adapter)"
+                )
             else:
                 linear_issue = linear_client.get_issue(ticket_id)
                 if linear_issue:

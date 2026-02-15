@@ -15,7 +15,6 @@ from herd_mcp.vault_refresh import get_manager
 if TYPE_CHECKING:
     from herd_mcp.adapters import AdapterRegistry
     from herd_core.adapters.repo import RepoAdapter
-    from herd_core.adapters.store import StoreAdapter
 
 logger = logging.getLogger(__name__)
 

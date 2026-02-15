@@ -15,8 +15,6 @@ from herd_mcp.db import connection
 if TYPE_CHECKING:
     from herd_mcp.adapters import AdapterRegistry
     from herd_core.adapters.repo import RepoAdapter
-    from herd_core.adapters.agent import AgentAdapter
-    from herd_core.adapters.store import StoreAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +84,7 @@ def _create_worktree(
             f"Failed to create worktree at {worktree_path}: {e.stderr}"
         ) from e
     except Exception as e:
-        raise RuntimeError(
-            f"Failed to create worktree at {worktree_path}: {e}"
-        ) from e
+        raise RuntimeError(f"Failed to create worktree at {worktree_path}: {e}") from e
 
 
 def _read_file_safe(path: Path) -> str | None:
@@ -448,7 +444,8 @@ async def execute(
                         if linear_issue:
                             # In Progress state UUID
                             linear_client.update_issue_state(
-                                linear_issue["id"], "77631f63-b27b-45a5-8b04-f9f82b4facde"
+                                linear_issue["id"],
+                                "77631f63-b27b-45a5-8b04-f9f82b4facde",
                             )
                             linear_synced = True
                             logger.info(

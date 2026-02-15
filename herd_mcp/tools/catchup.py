@@ -16,7 +16,6 @@ from herd_mcp.linear_client import search_issues
 if TYPE_CHECKING:
     from herd_mcp.adapters import AdapterRegistry
     from herd_core.adapters.repo import RepoAdapter
-    from herd_core.adapters.store import StoreAdapter
 
 
 def _read_status_md(repo_root: Path) -> dict[str, Any]:
@@ -118,8 +117,7 @@ async def _get_linear_tickets(
         if registry and registry.tickets:
             records = registry.tickets.list_tickets(assignee=agent_name)
             tickets = [
-                {"id": r.id, "title": r.title, "status": r.status}
-                for r in records
+                {"id": r.id, "title": r.title, "status": r.status} for r in records
             ]
         else:
             tickets = search_issues(f"assignee:{agent_name}")

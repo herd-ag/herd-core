@@ -266,7 +266,9 @@ async def execute(
                             f"Synced ticket {ticket_id} transition to {to_status} in Linear"
                         )
                     else:
-                        logger.warning(f"Could not find Linear issue {ticket_id} for sync")
+                        logger.warning(
+                            f"Could not find Linear issue {ticket_id} for sync"
+                        )
                 except Exception as e:
                     logger.warning(f"Failed to sync ticket {ticket_id} to Linear: {e}")
                     result["linear_sync_error"] = str(e)

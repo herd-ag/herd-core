@@ -60,7 +60,9 @@ def get_adapter_registry() -> AdapterRegistry:
         else:
             logger.warning("HERD_SLACK_TOKEN not set, NotifyAdapter unavailable")
     except ImportError:
-        logger.info("herd-notify-slack not installed, using fallback Slack implementation")
+        logger.info(
+            "herd-notify-slack not installed, using fallback Slack implementation"
+        )
 
     # Try to instantiate TicketAdapter (Linear)
     try:
@@ -73,7 +75,9 @@ def get_adapter_registry() -> AdapterRegistry:
         else:
             logger.warning("LINEAR_API_KEY not set, TicketAdapter unavailable")
     except ImportError:
-        logger.info("herd-ticket-linear not installed, using fallback Linear implementation")
+        logger.info(
+            "herd-ticket-linear not installed, using fallback Linear implementation"
+        )
 
     # Try to instantiate StoreAdapter (DuckDB)
     try:
@@ -83,7 +87,9 @@ def get_adapter_registry() -> AdapterRegistry:
         registry.store = DuckDBStoreAdapter(path=db_path)
         logger.info("Initialized DuckDBStoreAdapter")
     except ImportError:
-        logger.info("herd-store-duckdb not installed, using fallback DuckDB implementation")
+        logger.info(
+            "herd-store-duckdb not installed, using fallback DuckDB implementation"
+        )
     except Exception as e:
         logger.warning(f"Failed to initialize DuckDBStoreAdapter: {e}")
 
@@ -106,7 +112,9 @@ def get_adapter_registry() -> AdapterRegistry:
         registry.agent = ClaudeAgentAdapter()
         logger.info("Initialized ClaudeAgentAdapter")
     except ImportError:
-        logger.info("herd-agent-claude not installed, using fallback spawn implementation")
+        logger.info(
+            "herd-agent-claude not installed, using fallback spawn implementation"
+        )
     except Exception as e:
         logger.warning(f"Failed to initialize ClaudeAgentAdapter: {e}")
 
@@ -199,7 +207,9 @@ async def herd_assign(
     """
     current_agent = get_agent_identity()
     registry = get_adapter_registry()
-    return await assign.execute(ticket_id, agent_name or current_agent, priority, registry)
+    return await assign.execute(
+        ticket_id, agent_name or current_agent, priority, registry
+    )
 
 
 @mcp.tool()
@@ -222,7 +232,9 @@ async def herd_transition(
     """
     agent_name = get_agent_identity()
     registry = get_adapter_registry()
-    return await transition.execute(ticket_id, to_status, blocked_by, note, agent_name, registry)
+    return await transition.execute(
+        ticket_id, to_status, blocked_by, note, agent_name, registry
+    )
 
 
 @mcp.tool()
@@ -245,7 +257,9 @@ async def herd_review(
     """
     agent_name = get_agent_identity()
     registry = get_adapter_registry()
-    return await review.execute(pr_number, ticket_id, verdict, findings, agent_name, registry)
+    return await review.execute(
+        pr_number, ticket_id, verdict, findings, agent_name, registry
+    )
 
 
 @mcp.tool()

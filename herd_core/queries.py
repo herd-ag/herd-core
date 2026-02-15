@@ -24,14 +24,11 @@ from herd_core.types import (
     AgentRecord,
     AgentState,
     LifecycleEvent,
-    PRRecord,
     ReviewRecord,
-    SprintRecord,
     TicketEvent,
     TicketRecord,
     TokenEvent,
 )
-
 
 # ============================================================
 # Query result types — domain-specific return values
@@ -109,18 +106,14 @@ class OperationalQueries:
         if ticket is None:
             return None
         events = self._store.events(TicketEvent, entity_id=ticket_id)
-        total = sum(
-            e.elapsed_minutes for e in events if e.elapsed_minutes is not None
-        )
+        total = sum(e.elapsed_minutes for e in events if e.elapsed_minutes is not None)
         return TicketTimeline(
             ticket=ticket,
             events=events,  # type: ignore[arg-type]
             total_elapsed_minutes=total,
         )
 
-    def cost_summary(
-        self, *, since: datetime | None = None
-    ) -> CostSummary:
+    def cost_summary(self, *, since: datetime | None = None) -> CostSummary:
         """Token cost summary, optionally filtered by period."""
         filters: dict[str, Any] = {}
         if since:
@@ -137,9 +130,9 @@ class OperationalQueries:
         for e in events:
             total_tokens += e.total_tokens
             total_cost += e.cost_usd
-            by_agent[e.instance_id] = by_agent.get(
-                e.instance_id, Decimal("0")
-            ) + e.cost_usd
+            by_agent[e.instance_id] = (
+                by_agent.get(e.instance_id, Decimal("0")) + e.cost_usd
+            )
             if e.model:
                 by_model[e.model] = by_model.get(e.model, Decimal("0")) + e.cost_usd
 
@@ -151,9 +144,7 @@ class OperationalQueries:
             period_start=since,
         )
 
-    def review_summary(
-        self, *, since: datetime | None = None
-    ) -> ReviewSummary:
+    def review_summary(self, *, since: datetime | None = None) -> ReviewSummary:
         """Review effectiveness summary."""
         filters: dict[str, Any] = {"active": True}
         if since:
@@ -179,28 +170,20 @@ class OperationalQueries:
         """All tickets currently in blocked state."""
         return self._store.list(TicketRecord, status="blocked", active=True)
 
-    def stale_agents(
-        self, *, threshold_hours: int = 24
-    ) -> list[AgentRecord]:
+    def stale_agents(self, *, threshold_hours: int = 24) -> list[AgentRecord]:
         """Running agents with no recent activity."""
-        agents = self._store.list(
-            AgentRecord, state=AgentState.RUNNING, active=True
-        )
+        agents = self._store.list(AgentRecord, state=AgentState.RUNNING, active=True)
         if not threshold_hours:
             return agents
         cutoff = datetime.now(timezone.utc).timestamp() - (threshold_hours * 3600)
         stale = []
         for a in agents:
-            events = self._store.events(
-                LifecycleEvent, instance_id=a.id
-            )
+            events = self._store.events(LifecycleEvent, instance_id=a.id)
             if not events:
                 stale.append(a)
                 continue
             latest = max(
-                e.created_at.timestamp()
-                for e in events
-                if e.created_at is not None
+                e.created_at.timestamp() for e in events if e.created_at is not None
             )
             if latest < cutoff:
                 stale.append(a)

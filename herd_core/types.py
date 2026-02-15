@@ -6,8 +6,6 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Any
-
 
 # ============================================================
 # Base classes — the ORM-like foundation

@@ -90,7 +90,9 @@ async def decommission(
 
             return result
         except Exception as e:
-            logger.warning(f"StoreAdapter failed for decommission, falling back to SQL: {e}")
+            logger.warning(
+                f"StoreAdapter failed for decommission, falling back to SQL: {e}"
+            )
             # Fall through to SQL fallback
 
     # Fallback to raw SQL
@@ -252,7 +254,9 @@ async def standdown(
                 "requested_by": current_agent,
             }
         except Exception as e:
-            logger.warning(f"StoreAdapter failed for standdown, falling back to SQL: {e}")
+            logger.warning(
+                f"StoreAdapter failed for standdown, falling back to SQL: {e}"
+            )
             # Fall through to SQL fallback
 
     # Fallback to raw SQL
