@@ -18,8 +18,8 @@ def seeded_db(in_memory_db):
         INSERT INTO herd.agent_def
           (agent_code, agent_role, agent_status, created_at)
         VALUES
-          ('grunt', 'backend', 'active', CURRENT_TIMESTAMP),
-          ('pikasso', 'frontend', 'active', CURRENT_TIMESTAMP)
+          ('mason', 'backend', 'active', CURRENT_TIMESTAMP),
+          ('fresco', 'frontend', 'active', CURRENT_TIMESTAMP)
         """)
 
     # Insert test tickets
@@ -31,11 +31,11 @@ def seeded_db(in_memory_db):
           ('DBC-101', 'Another ticket', 'Another description', 'backlog', CURRENT_TIMESTAMP)
         """)
 
-    # Insert test agent instance for grunt
+    # Insert test agent instance for mason
     conn.execute("""
         INSERT INTO herd.agent_instance
           (agent_instance_code, agent_code, model_code, agent_instance_started_at)
-        VALUES ('inst-001', 'grunt', 'claude-sonnet-4', CURRENT_TIMESTAMP)
+        VALUES ('inst-001', 'mason', 'claude-sonnet-4', CURRENT_TIMESTAMP)
         """)
 
     yield conn
@@ -50,12 +50,12 @@ async def test_assign_success_with_instance(seeded_db):
 
         result = await assign.execute(
             ticket_id="DBC-100",
-            agent_name="grunt",
+            agent_name="mason",
             priority="high",
         )
 
         assert result["assigned"] is True
-        assert result["agent"] == "grunt"
+        assert result["agent"] == "mason"
         assert result["ticket"]["id"] == "DBC-100"
         assert result["ticket"]["title"] == "Test ticket"
         assert result["ticket"]["previous_status"] == "backlog"
@@ -90,13 +90,13 @@ async def test_assign_without_agent_instance(seeded_db):
 
         result = await assign.execute(
             ticket_id="DBC-101",
-            agent_name="pikasso",  # Has no active instance
+            agent_name="fresco",  # Has no active instance
             priority="medium",
         )
 
         # Should still succeed but note the missing instance
         assert result["assigned"] is True
-        assert result["agent"] == "pikasso"
+        assert result["agent"] == "fresco"
         assert result["agent_instance_code"] is None
         assert result["note"] == "No active agent instance found"
 
@@ -146,7 +146,7 @@ async def test_assign_ticket_not_found(seeded_db):
 
         result = await assign.execute(
             ticket_id="NONEXISTENT",
-            agent_name="grunt",
+            agent_name="mason",
             priority="high",
         )
 
@@ -176,9 +176,9 @@ async def test_assign_agent_not_found(seeded_db):
 @pytest.mark.asyncio
 async def test_assign_inactive_agent(seeded_db):
     """Test ticket assignment to inactive agent."""
-    # First set pikasso to inactive
+    # First set fresco to inactive
     seeded_db.execute(
-        "UPDATE herd.agent_def SET agent_status = 'inactive' WHERE agent_code = 'pikasso'"
+        "UPDATE herd.agent_def SET agent_status = 'inactive' WHERE agent_code = 'fresco'"
     )
 
     with patch("herd_mcp.tools.assign.connection") as mock_context:
@@ -187,7 +187,7 @@ async def test_assign_inactive_agent(seeded_db):
 
         result = await assign.execute(
             ticket_id="DBC-100",
-            agent_name="pikasso",
+            agent_name="fresco",
             priority="high",
         )
 
@@ -207,7 +207,7 @@ async def test_assign_updates_modified_at(seeded_db):
         # Perform assignment
         result = await assign.execute(
             ticket_id="DBC-100",
-            agent_name="grunt",
+            agent_name="mason",
             priority="high",
         )
 
@@ -240,7 +240,7 @@ async def test_assign_auto_register_from_linear(seeded_db):
                 with patch("herd_mcp.linear_client.update_issue_state"):
                     result = await assign.execute(
                         ticket_id="DBC-125",
-                        agent_name="grunt",
+                        agent_name="mason",
                         priority="high",
                     )
 
@@ -275,7 +275,7 @@ async def test_assign_linear_sync_success(seeded_db):
                 with patch("herd_mcp.linear_client.update_issue_state") as mock_update:
                     result = await assign.execute(
                         ticket_id="DBC-100",
-                        agent_name="grunt",
+                        agent_name="mason",
                         priority="high",
                     )
 
@@ -302,7 +302,7 @@ async def test_assign_linear_sync_failure(seeded_db):
             ):
                 result = await assign.execute(
                     ticket_id="DBC-100",
-                    agent_name="grunt",
+                    agent_name="mason",
                     priority="high",
                 )
 
@@ -330,7 +330,7 @@ async def test_assign_non_linear_ticket_no_sync(seeded_db):
             with patch("herd_mcp.linear_client.get_issue") as mock_get:
                 result = await assign.execute(
                     ticket_id="INTERNAL-001",
-                    agent_name="grunt",
+                    agent_name="mason",
                     priority="normal",
                 )
 

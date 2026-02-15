@@ -19,14 +19,14 @@ def seeded_db(in_memory_db):
     conn.execute("""
         INSERT INTO herd.agent_def
           (agent_code, agent_role, agent_status, created_at)
-        VALUES ('grunt', 'backend', 'active', CURRENT_TIMESTAMP)
+        VALUES ('mason', 'backend', 'active', CURRENT_TIMESTAMP)
         """)
 
     # Insert test agent instance
     conn.execute("""
         INSERT INTO herd.agent_instance
           (agent_instance_code, agent_code, model_code, agent_instance_started_at)
-        VALUES ('inst-001', 'grunt', 'claude-sonnet-4', CURRENT_TIMESTAMP)
+        VALUES ('inst-001', 'mason', 'claude-sonnet-4', CURRENT_TIMESTAMP)
         """)
 
     yield conn
@@ -85,11 +85,11 @@ async def test_execute_with_agent_instance(seeded_db):
                 message="Started working on DBC-91",
                 channel="#herd-feed",
                 await_response=False,
-                agent_name="grunt",
+                agent_name="mason",
             )
 
             assert result["posted"] is True
-            assert result["agent"] == "grunt"
+            assert result["agent"] == "mason"
             assert result["event_type"] == "work_started"
             assert result["event_id"] is not None
 
@@ -147,7 +147,7 @@ async def test_execute_slack_failure(seeded_db):
                 message="Test message",
                 channel="#herd-feed",
                 await_response=False,
-                agent_name="grunt",
+                agent_name="mason",
             )
 
             assert result["posted"] is False
@@ -203,7 +203,7 @@ async def test_execute_await_response_false(seeded_db):
                 message="Test message",
                 channel="#herd-feed",
                 await_response=False,
-                agent_name="grunt",
+                agent_name="mason",
             )
 
             assert result["posted"] is True
@@ -242,7 +242,7 @@ async def test_execute_await_response_with_replies(seeded_db):
                             message="Test message",
                             channel="#herd-feed",
                             await_response=True,
-                            agent_name="grunt",
+                            agent_name="mason",
                         )
 
                         assert result["posted"] is True
@@ -278,7 +278,7 @@ async def test_execute_await_response_timeout(seeded_db):
                             message="Test message",
                             channel="#herd-feed",
                             await_response=True,
-                            agent_name="grunt",
+                            agent_name="mason",
                         )
 
                         assert result["posted"] is True
@@ -369,7 +369,7 @@ async def test_execute_await_response_slack_post_fails(seeded_db):
                         message="Test message",
                         channel="#herd-feed",
                         await_response=True,
-                        agent_name="grunt",
+                        agent_name="mason",
                     )
 
                     assert result["posted"] is False
@@ -407,7 +407,7 @@ async def test_execute_await_response_token_missing_at_poll_time(seeded_db):
                             message="Test message",
                             channel="#herd-feed",
                             await_response=True,
-                            agent_name="grunt",
+                            agent_name="mason",
                         )
 
                         assert result["posted"] is True
@@ -455,7 +455,7 @@ async def test_execute_await_response_replies_on_third_poll(seeded_db):
                             message="Test message",
                             channel="#herd-feed",
                             await_response=True,
-                            agent_name="grunt",
+                            agent_name="mason",
                         )
 
                         assert result["posted"] is True
@@ -516,18 +516,18 @@ async def test_execute_with_sync_notify_adapter(seeded_db):
             message="Test with sync adapter",
             channel="#herd-feed",
             await_response=False,
-            agent_name="grunt",
+            agent_name="mason",
             registry=mock_registry,
         )
 
         assert result["posted"] is True
-        assert result["agent"] == "grunt"
+        assert result["agent"] == "mason"
 
         # Verify sync method was called (WITHOUT await - it's a sync function)
         mock_notify.post.assert_called_once_with(
             message="Test with sync adapter",
             channel="#herd-feed",
-            username="grunt",
+            username="mason",
         )
         # Verify it was NOT called as a coroutine
         assert not inspect.iscoroutinefunction(mock_notify.post)

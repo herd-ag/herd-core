@@ -69,13 +69,13 @@ class TestAgentConfig:
     def test_role_models_accepts_dict(self) -> None:
         """AgentConfig.role_models accepts and stores dict."""
         models = {
-            "grunt": "claude-sonnet-4-5",
+            "mason": "claude-sonnet-4-5",
             "wardenstein": "claude-opus-4-6",
-            "pikasso": "claude-sonnet-4-5",
+            "fresco": "claude-sonnet-4-5",
         }
         config = AgentConfig(role_models=models)
         assert config.role_models == models
-        assert config.role_models["grunt"] == "claude-sonnet-4-5"
+        assert config.role_models["mason"] == "claude-sonnet-4-5"
 
 
 class TestStoreConfig:

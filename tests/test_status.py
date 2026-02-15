@@ -18,9 +18,9 @@ def seeded_db(in_memory_db):
         INSERT INTO herd.agent_def
           (agent_code, agent_role, agent_status, default_model_code, created_at)
         VALUES
-          ('grunt', 'backend', 'active', 'claude-sonnet-4', CURRENT_TIMESTAMP),
-          ('pikasso', 'frontend', 'active', 'claude-sonnet-4', CURRENT_TIMESTAMP),
-          ('mini-mao', 'architect', 'active', 'claude-opus-4', CURRENT_TIMESTAMP)
+          ('mason', 'backend', 'active', 'claude-sonnet-4', CURRENT_TIMESTAMP),
+          ('fresco', 'frontend', 'active', 'claude-sonnet-4', CURRENT_TIMESTAMP),
+          ('steve', 'architect', 'active', 'claude-opus-4', CURRENT_TIMESTAMP)
         """)
 
     # Insert test sprint
@@ -49,7 +49,7 @@ def seeded_db(in_memory_db):
           (agent_instance_code, agent_code, model_code, ticket_code,
            agent_instance_started_at)
         VALUES
-          ('inst-001', 'grunt', 'claude-sonnet-4', 'DBC-91', CURRENT_TIMESTAMP)
+          ('inst-001', 'mason', 'claude-sonnet-4', 'DBC-91', CURRENT_TIMESTAMP)
         """)
 
     # Insert ticket activity (for blocked ticket)
@@ -69,25 +69,25 @@ def seeded_db(in_memory_db):
 async def test_status_scope_all(seeded_db):
     """Test status query with scope='all'."""
     with patch("herd_mcp.db.get_connection", return_value=seeded_db):
-        result = await status.execute(scope="all", agent_name="mini-mao")
+        result = await status.execute(scope="all", agent_name="steve")
 
         assert result["scope"] == "all"
         assert "agents" in result
         assert "sprint" in result
         assert "blockers" in result
-        assert result["requesting_agent"] == "mini-mao"
+        assert result["requesting_agent"] == "steve"
 
         # Check agents
         assert len(result["agents"]) == 3
         agent_codes = [a["agent_code"] for a in result["agents"]]
-        assert "grunt" in agent_codes
-        assert "pikasso" in agent_codes
-        assert "mini-mao" in agent_codes
+        assert "mason" in agent_codes
+        assert "fresco" in agent_codes
+        assert "steve" in agent_codes
 
-        # Check that grunt has assignment
-        grunt = next(a for a in result["agents"] if a["agent_code"] == "grunt")
-        assert grunt["current_assignment"] is not None
-        assert grunt["current_assignment"]["ticket_code"] == "DBC-91"
+        # Check that mason has assignment
+        mason = next(a for a in result["agents"] if a["agent_code"] == "mason")
+        assert mason["current_assignment"] is not None
+        assert mason["current_assignment"]["ticket_code"] == "DBC-91"
 
         # Check sprint
         assert result["sprint"] is not None
@@ -104,7 +104,7 @@ async def test_status_scope_all(seeded_db):
 async def test_status_scope_sprint(seeded_db):
     """Test status query with scope='sprint'."""
     with patch("herd_mcp.db.get_connection", return_value=seeded_db):
-        result = await status.execute(scope="sprint", agent_name="mini-mao")
+        result = await status.execute(scope="sprint", agent_name="steve")
 
         assert result["scope"] == "sprint"
         assert "sprint" in result
@@ -119,13 +119,13 @@ async def test_status_scope_sprint(seeded_db):
 async def test_status_scope_agent(seeded_db):
     """Test status query with scope='agent:<name>'."""
     with patch("herd_mcp.db.get_connection", return_value=seeded_db):
-        result = await status.execute(scope="agent:grunt", agent_name="mini-mao")
+        result = await status.execute(scope="agent:mason", agent_name="steve")
 
-        assert result["scope"] == "agent:grunt"
+        assert result["scope"] == "agent:mason"
         assert "agent_status" in result
 
         agent_status = result["agent_status"]
-        assert agent_status["agent_code"] == "grunt"
+        assert agent_status["agent_code"] == "mason"
         assert agent_status["agent_role"] == "backend"
         assert agent_status["agent_status"] == "active"
         assert len(agent_status["recent_instances"]) == 1
@@ -136,7 +136,7 @@ async def test_status_scope_agent(seeded_db):
 async def test_status_scope_agent_not_found(seeded_db):
     """Test status query for nonexistent agent."""
     with patch("herd_mcp.db.get_connection", return_value=seeded_db):
-        result = await status.execute(scope="agent:nonexistent", agent_name="mini-mao")
+        result = await status.execute(scope="agent:nonexistent", agent_name="steve")
 
         assert result["scope"] == "agent:nonexistent"
         assert "agent_status" in result
@@ -147,7 +147,7 @@ async def test_status_scope_agent_not_found(seeded_db):
 async def test_status_scope_ticket(seeded_db):
     """Test status query with scope='ticket:<id>'."""
     with patch("herd_mcp.db.get_connection", return_value=seeded_db):
-        result = await status.execute(scope="ticket:DBC-91", agent_name="mini-mao")
+        result = await status.execute(scope="ticket:DBC-91", agent_name="steve")
 
         assert result["scope"] == "ticket:DBC-91"
         assert "ticket_status" in result
@@ -163,7 +163,7 @@ async def test_status_scope_ticket(seeded_db):
 async def test_status_scope_ticket_not_found(seeded_db):
     """Test status query for nonexistent ticket."""
     with patch("herd_mcp.db.get_connection", return_value=seeded_db):
-        result = await status.execute(scope="ticket:NONEXISTENT", agent_name="mini-mao")
+        result = await status.execute(scope="ticket:NONEXISTENT", agent_name="steve")
 
         assert result["scope"] == "ticket:NONEXISTENT"
         assert "ticket_status" in result
@@ -174,23 +174,23 @@ async def test_status_scope_ticket_not_found(seeded_db):
 async def test_status_scope_available(seeded_db):
     """Test status query with scope='available'."""
     with patch("herd_mcp.db.get_connection", return_value=seeded_db):
-        result = await status.execute(scope="available", agent_name="mini-mao")
+        result = await status.execute(scope="available", agent_name="steve")
 
         assert result["scope"] == "available"
         assert "available_agents" in result
 
-        # pikasso and mini-mao should be available (no active instances)
+        # fresco and steve should be available (no active instances)
         available_codes = [a["agent_code"] for a in result["available_agents"]]
-        assert "pikasso" in available_codes
-        assert "mini-mao" in available_codes
-        assert "grunt" not in available_codes  # grunt has active instance
+        assert "fresco" in available_codes
+        assert "steve" in available_codes
+        assert "mason" not in available_codes  # mason has active instance
 
 
 @pytest.mark.asyncio
 async def test_status_scope_blocked(seeded_db):
     """Test status query with scope='blocked'."""
     with patch("herd_mcp.db.get_connection", return_value=seeded_db):
-        result = await status.execute(scope="blocked", agent_name="mini-mao")
+        result = await status.execute(scope="blocked", agent_name="steve")
 
         assert result["scope"] == "blocked"
         assert "blockers" in result
@@ -202,7 +202,7 @@ async def test_status_scope_blocked(seeded_db):
 async def test_status_scope_unknown_defaults_to_all(seeded_db):
     """Test status query with unknown scope defaults to 'all'."""
     with patch("herd_mcp.db.get_connection", return_value=seeded_db):
-        result = await status.execute(scope="unknown_scope", agent_name="mini-mao")
+        result = await status.execute(scope="unknown_scope", agent_name="steve")
 
         assert result["scope"] == "all"
         assert "agents" in result
@@ -214,7 +214,7 @@ async def test_status_scope_unknown_defaults_to_all(seeded_db):
 async def test_status_no_active_sprint(in_memory_db):
     """Test status query when no active sprint exists."""
     with patch("herd_mcp.db.get_connection", return_value=in_memory_db):
-        result = await status.execute(scope="sprint", agent_name="mini-mao")
+        result = await status.execute(scope="sprint", agent_name="steve")
 
         assert result["scope"] == "sprint"
         assert result["sprint"] is None

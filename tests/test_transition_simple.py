@@ -17,7 +17,7 @@ def seeded_db(in_memory_db):
     conn.execute("""
         INSERT INTO herd.agent_def
           (agent_code, agent_role, agent_status, created_at)
-        VALUES ('grunt', 'backend', 'active', CURRENT_TIMESTAMP)
+        VALUES ('mason', 'backend', 'active', CURRENT_TIMESTAMP)
         """)
 
     # Insert test tickets
@@ -33,7 +33,7 @@ def seeded_db(in_memory_db):
     conn.execute("""
         INSERT INTO herd.agent_instance
           (agent_instance_code, agent_code, model_code, agent_instance_started_at)
-        VALUES ('inst-001', 'grunt', 'claude-sonnet-4', CURRENT_TIMESTAMP - INTERVAL '1 hour')
+        VALUES ('inst-001', 'mason', 'claude-sonnet-4', CURRENT_TIMESTAMP - INTERVAL '1 hour')
         """)
 
     # Insert initial ticket activity for DBC-100
@@ -59,7 +59,7 @@ async def test_transition_success(seeded_db):
             to_status="done",
             blocked_by=None,
             note="Work completed",
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert result["transition_id"] is not None
@@ -67,7 +67,7 @@ async def test_transition_success(seeded_db):
         assert result["ticket"]["previous_status"] == "in_progress"
         assert result["ticket"]["new_status"] == "done"
         assert result["event_type"] == "status_changed"
-        assert result["agent"] == "grunt"
+        assert result["agent"] == "mason"
 
         # Verify ticket status was updated
         ticket_status = seeded_db.execute(
@@ -88,7 +88,7 @@ async def test_transition_to_blocked(seeded_db):
             to_status="blocked",
             blocked_by="DBC-101",
             note="Waiting for DBC-101",
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert result["event_type"] == "blocked"
@@ -108,7 +108,7 @@ async def test_transition_ticket_not_found(seeded_db):
             to_status="done",
             blocked_by=None,
             note=None,
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert result["transition_id"] is None
@@ -184,7 +184,7 @@ async def test_transition_linear_sync_success(seeded_db):
                             to_status="done",
                             blocked_by=None,
                             note="Completed",
-                            agent_name="grunt",
+                            agent_name="mason",
                         )
 
                         assert result["transition_id"] is not None
@@ -230,7 +230,7 @@ async def test_transition_linear_sync_failure(seeded_db):
                             to_status="done",
                             blocked_by=None,
                             note="Completed",
-                            agent_name="grunt",
+                            agent_name="mason",
                         )
 
                         # Transition should still succeed in DuckDB
@@ -266,7 +266,7 @@ async def test_transition_non_linear_ticket_no_sync(seeded_db):
                     to_status="in_progress",
                     blocked_by=None,
                     note="Starting work",
-                    agent_name="grunt",
+                    agent_name="mason",
                 )
 
                 assert result["transition_id"] is not None
@@ -296,7 +296,7 @@ async def test_transition_unmapped_status_no_sync(seeded_db):
                         to_status="blocked",
                         blocked_by="DBC-101",
                         note="Waiting on dependency",
-                        agent_name="grunt",
+                        agent_name="mason",
                     )
 
                     assert result["transition_id"] is not None

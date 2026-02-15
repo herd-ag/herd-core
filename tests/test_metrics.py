@@ -18,8 +18,8 @@ def seeded_db(in_memory_db):
         INSERT INTO herd.agent_def
           (agent_code, agent_role, agent_status, default_model_code, created_at)
         VALUES
-          ('grunt', 'backend', 'active', 'claude-sonnet-4', CURRENT_TIMESTAMP),
-          ('pikasso', 'frontend', 'active', 'claude-opus-4', CURRENT_TIMESTAMP)
+          ('mason', 'backend', 'active', 'claude-sonnet-4', CURRENT_TIMESTAMP),
+          ('fresco', 'frontend', 'active', 'claude-opus-4', CURRENT_TIMESTAMP)
         """)
 
     # Insert test agent instances
@@ -27,8 +27,8 @@ def seeded_db(in_memory_db):
         INSERT INTO herd.agent_instance
           (agent_instance_code, agent_code, model_code, ticket_code, agent_instance_started_at)
         VALUES
-          ('inst-001', 'grunt', 'claude-sonnet-4', 'DBC-100', CURRENT_TIMESTAMP),
-          ('inst-002', 'pikasso', 'claude-opus-4', 'DBC-101', CURRENT_TIMESTAMP)
+          ('inst-001', 'mason', 'claude-sonnet-4', 'DBC-100', CURRENT_TIMESTAMP),
+          ('inst-002', 'fresco', 'claude-opus-4', 'DBC-101', CURRENT_TIMESTAMP)
         """)
 
     # Insert token activity
@@ -116,7 +116,7 @@ async def test_cost_per_ticket(seeded_db):
             query="cost_per_ticket",
             period=None,
             group_by=None,
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert "data" in result
@@ -137,7 +137,7 @@ async def test_agent_performance(seeded_db):
             query="agent_performance",
             period=None,
             group_by=None,
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert "data" in result
@@ -158,7 +158,7 @@ async def test_model_efficiency(seeded_db):
             query="model_efficiency",
             period=None,
             group_by=None,
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert "data" in result
@@ -179,7 +179,7 @@ async def test_review_effectiveness_by_verdict(seeded_db):
             query="review_effectiveness",
             period=None,
             group_by=None,
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert "data" in result
@@ -201,7 +201,7 @@ async def test_review_effectiveness_by_category(seeded_db):
             query="review_effectiveness",
             period=None,
             group_by="category",
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert "data" in result
@@ -222,7 +222,7 @@ async def test_sprint_velocity(seeded_db):
             query="sprint_velocity",
             period=None,
             group_by=None,
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert "data" in result
@@ -243,7 +243,7 @@ async def test_pipeline_efficiency(seeded_db):
             query="pipeline_efficiency",
             period=None,
             group_by=None,
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert "data" in result
@@ -263,7 +263,7 @@ async def test_headline_metric(seeded_db):
             query="headline",
             period=None,
             group_by=None,
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert "data" in result
@@ -284,7 +284,7 @@ async def test_unknown_query(seeded_db):
             query="unknown_query",
             period=None,
             group_by=None,
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert "error" in result
@@ -302,7 +302,7 @@ async def test_period_filtering_today(seeded_db):
             query="cost_per_ticket",
             period="today",
             group_by=None,
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert "data" in result
@@ -320,7 +320,7 @@ async def test_period_filtering_iso_range(seeded_db):
             query="cost_per_ticket",
             period="2026-01-01..2026-12-31",
             group_by=None,
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert "data" in result
@@ -378,7 +378,7 @@ async def test_query_alias_token_costs(seeded_db):
             query="token_costs",
             period=None,
             group_by=None,
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert "data" in result
@@ -399,7 +399,7 @@ async def test_query_alias_review_stats(seeded_db):
             query="review_stats",
             period=None,
             group_by=None,
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert "data" in result
@@ -419,7 +419,7 @@ async def test_query_alias_velocity(seeded_db):
             query="velocity",
             period=None,
             group_by=None,
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert "data" in result

@@ -291,7 +291,7 @@ class TestReturnTypes:
         """SpawnResult is immutable."""
         result = SpawnResult(
             instance_id="agent-001",
-            agent="grunt",
+            agent="mason",
             ticket_id="DBC-137",
             model="claude-sonnet-4-5",
             worktree="/tmp/test",
@@ -299,7 +299,7 @@ class TestReturnTypes:
             spawned_at=datetime.now(timezone.utc),
         )
         with pytest.raises(FrozenInstanceError):
-            result.agent = "pikasso"  # type: ignore[misc]
+            result.agent = "fresco"  # type: ignore[misc]
 
     def test_transition_result_is_frozen(self) -> None:
         """TransitionResult is immutable."""
@@ -323,7 +323,7 @@ class TestReturnTypes:
     def test_thread_message_is_frozen(self) -> None:
         """ThreadMessage is immutable."""
         msg = ThreadMessage(
-            author="Grunt", text="Test message", timestamp="1234567890"
+            author="Mason", text="Test message", timestamp="1234567890"
         )
         with pytest.raises(FrozenInstanceError):
             msg.text = "Modified"  # type: ignore[misc]
@@ -333,7 +333,7 @@ class TestReturnTypes:
         commit = CommitInfo(
             sha="abc123",
             message="Test commit",
-            author="Grunt",
+            author="Mason",
             timestamp=datetime.now(timezone.utc),
         )
         with pytest.raises(FrozenInstanceError):

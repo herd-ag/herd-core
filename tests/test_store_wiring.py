@@ -24,14 +24,14 @@ def seeded_db(in_memory_db):
     conn.execute("""
         INSERT INTO herd.agent_def
           (agent_code, agent_role, agent_status, created_at)
-        VALUES ('grunt', 'backend', 'active', CURRENT_TIMESTAMP)
+        VALUES ('mason', 'backend', 'active', CURRENT_TIMESTAMP)
         """)
 
     # Insert test agent instance
     conn.execute("""
         INSERT INTO herd.agent_instance
           (agent_instance_code, agent_code, model_code, agent_instance_started_at)
-        VALUES ('inst-001', 'grunt', 'claude-sonnet-4', CURRENT_TIMESTAMP)
+        VALUES ('inst-001', 'mason', 'claude-sonnet-4', CURRENT_TIMESTAMP)
         """)
 
     # Insert test ticket
@@ -56,10 +56,10 @@ async def test_lifecycle_decommission_fallback_to_sql(seeded_db):
         mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
-        result = await lifecycle.decommission("grunt", "mini-mao", registry)
+        result = await lifecycle.decommission("mason", "steve", registry)
 
         assert result["success"] is True
-        assert result["target_agent"] == "grunt"
+        assert result["target_agent"] == "mason"
 
 
 @pytest.mark.asyncio
@@ -71,10 +71,10 @@ async def test_lifecycle_standdown_fallback_to_sql(seeded_db):
         mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
-        result = await lifecycle.standdown("grunt", "mini-mao", registry)
+        result = await lifecycle.standdown("mason", "steve", registry)
 
         assert result["success"] is True
-        assert result["target_agent"] == "grunt"
+        assert result["target_agent"] == "mason"
 
 
 # Log tests
@@ -96,7 +96,7 @@ async def test_log_fallback_to_sql(seeded_db):
                 message="Test message",
                 channel="#herd-feed",
                 await_response=False,
-                agent_name="grunt",
+                agent_name="mason",
                 registry=registry,
             )
 
@@ -115,7 +115,7 @@ async def test_assign_fallback_to_sql(seeded_db):
         mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
-        result = await assign.execute("DBC-148", "grunt", "normal", registry)
+        result = await assign.execute("DBC-148", "mason", "normal", registry)
 
         assert result["assigned"] is True
 
@@ -132,7 +132,7 @@ async def test_transition_fallback_to_sql(seeded_db):
         mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
-        result = await transition.execute("DBC-148", "in_progress", None, None, "grunt", registry)
+        result = await transition.execute("DBC-148", "in_progress", None, None, "mason", registry)
 
         assert result["ticket"]["id"] == "DBC-148"
 
@@ -156,7 +156,7 @@ async def test_record_decision_fallback_to_sql(in_memory_db):
             rationale="Test rationale",
             alternatives_considered=None,
             ticket_code="DBC-148",
-            agent_name="grunt",
+            agent_name="mason",
             registry=registry,
         )
 
@@ -175,7 +175,7 @@ async def test_status_with_registry(seeded_db):
         mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
-        result = await status.execute("all", "grunt", registry)
+        result = await status.execute("all", "mason", registry)
 
         assert result["scope"] == "all"
         assert "agents" in result
@@ -190,7 +190,7 @@ async def test_metrics_with_registry(seeded_db):
         mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
-        result = await metrics.execute("cost_per_ticket", None, None, "grunt", registry)
+        result = await metrics.execute("cost_per_ticket", None, None, "mason", registry)
 
         assert "data" in result
         assert "summary" in result

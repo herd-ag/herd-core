@@ -138,12 +138,12 @@ def sample_agent() -> AgentRecord:
     """Provide a sample AgentRecord."""
     return AgentRecord(
         id="agent-001",
-        agent="grunt",
+        agent="mason",
         model="claude-sonnet-4-5",
         ticket_id="DBC-137",
         state=AgentState.RUNNING,
-        worktree="/private/tmp/grunt-dbc137",
-        branch="herd/grunt/dbc-137-test-suite",
+        worktree="/private/tmp/mason-dbc137",
+        branch="herd/mason/dbc-137-test-suite",
     )
 
 
@@ -165,8 +165,8 @@ def sample_pr() -> PRRecord:
     return PRRecord(
         id="pr-123",
         ticket_id="DBC-137",
-        title="[grunt] test(herd-core): comprehensive test suite",
-        branch="herd/grunt/dbc-137-test-suite",
+        title="[mason] test(herd-core): comprehensive test suite",
+        branch="herd/mason/dbc-137-test-suite",
         status="open",
         lines_added=500,
         lines_deleted=10,

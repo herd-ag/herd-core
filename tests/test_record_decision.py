@@ -17,7 +17,7 @@ def seeded_db(in_memory_db):
     conn.execute("""
         INSERT INTO herd.agent_def
           (agent_code, agent_role, agent_status, created_at)
-        VALUES ('grunt', 'backend', 'active', CURRENT_TIMESTAMP)
+        VALUES ('mason', 'backend', 'active', CURRENT_TIMESTAMP)
     """)
 
     yield conn
@@ -42,12 +42,12 @@ async def test_record_decision_success(seeded_db):
                 rationale="DuckDB is fast, embeddable, and requires no server",
                 alternatives_considered="PostgreSQL, SQLite, ClickHouse",
                 ticket_code="DBC-125",
-                agent_name="grunt",
+                agent_name="mason",
             )
 
             assert result["success"] is True
             assert "decision_id" in result
-            assert result["agent"] == "grunt"
+            assert result["agent"] == "mason"
             assert result["ticket_code"] == "DBC-125"
             assert result["posted_to_slack"] is True
 
@@ -56,7 +56,7 @@ async def test_record_decision_success(seeded_db):
         SELECT decision_id, decision_type, context, decision, rationale,
                alternatives_considered, decided_by, ticket_code
         FROM herd.decision_record
-        WHERE decided_by = 'grunt'
+        WHERE decided_by = 'mason'
     """).fetchall()
 
     assert len(decisions) == 1
@@ -66,7 +66,7 @@ async def test_record_decision_success(seeded_db):
     assert dec[3] == "Use DuckDB for embedded analytics"
     assert dec[4] == "DuckDB is fast, embeddable, and requires no server"
     assert dec[5] == "PostgreSQL, SQLite, ClickHouse"
-    assert dec[6] == "grunt"
+    assert dec[6] == "mason"
     assert dec[7] == "DBC-125"
 
 
@@ -89,7 +89,7 @@ async def test_record_decision_no_alternatives(seeded_db):
                 rationale="Makes client error handling easier",
                 alternatives_considered=None,
                 ticket_code=None,
-                agent_name="grunt",
+                agent_name="mason",
             )
 
             assert result["success"] is True
@@ -99,7 +99,7 @@ async def test_record_decision_no_alternatives(seeded_db):
     decisions = seeded_db.execute("""
         SELECT alternatives_considered, ticket_code
         FROM herd.decision_record
-        WHERE decided_by = 'grunt'
+        WHERE decided_by = 'mason'
     """).fetchall()
 
     assert len(decisions) == 1
@@ -146,7 +146,7 @@ async def test_record_decision_slack_failure(seeded_db):
                 rationale="PEP 8 standard",
                 alternatives_considered="camelCase",
                 ticket_code="DBC-125",
-                agent_name="grunt",
+                agent_name="mason",
             )
 
             # Should still succeed in DB even if Slack fails
@@ -156,7 +156,7 @@ async def test_record_decision_slack_failure(seeded_db):
 
     # Verify decision was still written to database
     decisions = seeded_db.execute("""
-        SELECT COUNT(*) FROM herd.decision_record WHERE decided_by = 'grunt'
+        SELECT COUNT(*) FROM herd.decision_record WHERE decided_by = 'mason'
     """).fetchone()
 
     assert decisions[0] == 1
@@ -190,7 +190,7 @@ async def test_record_decision_types(seeded_db):
                     rationale=f"Rationale for {dec_type}",
                     alternatives_considered=None,
                     ticket_code=None,
-                    agent_name="grunt",
+                    agent_name="mason",
                 )
 
                 assert result["success"] is True
@@ -198,7 +198,7 @@ async def test_record_decision_types(seeded_db):
     # Verify all decisions were written
     decisions = seeded_db.execute("""
         SELECT decision_type FROM herd.decision_record
-        WHERE decided_by = 'grunt'
+        WHERE decided_by = 'mason'
         ORDER BY created_at
     """).fetchall()
 
@@ -226,7 +226,7 @@ async def test_post_to_slack_decisions_formatting():
             result = record_decision._post_to_slack_decisions(
                 decision_text="Test decision text",
                 ticket_code="DBC-125",
-                agent_name="grunt",
+                agent_name="mason",
             )
 
             assert result["success"] is True
@@ -245,7 +245,7 @@ async def test_post_to_slack_decisions_no_token():
         result = record_decision._post_to_slack_decisions(
             decision_text="Test decision",
             ticket_code=None,
-            agent_name="grunt",
+            agent_name="mason",
         )
 
         assert result["success"] is False

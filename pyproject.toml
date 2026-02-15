@@ -42,7 +42,7 @@ Repository = "https://github.com/herd-ag/herd-core"
 Issues = "https://github.com/herd-ag/herd-core/issues"
 
 [project.optional-dependencies]
-dev = ["pytest>=7.0", "pytest-asyncio>=0.23"]
+dev = ["pytest>=7.0", "pytest-asyncio>=0.23", "ruff>=0.4", "black>=24.0", "mypy>=1.10"]
 adapters = [
     "herd-notify-slack @ git+https://github.com/herd-ag/herd-notify-slack.git",
     "herd-ticket-linear @ git+https://github.com/herd-ag/herd-ticket-linear.git",

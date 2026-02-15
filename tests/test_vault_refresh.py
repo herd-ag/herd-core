@@ -234,14 +234,14 @@ async def test_context_preservation(reset_singleton):
     mock_proc.returncode = 0
     mock_proc.communicate = AsyncMock(return_value=(b"success", b""))
 
-    context = {"ticket_id": "DBC-97", "agent": "grunt"}
+    context = {"ticket_id": "DBC-97", "agent": "mason"}
 
     with patch("asyncio.create_subprocess_exec", return_value=mock_proc):
         result = await manager.trigger_refresh("test_milestone", context)
 
         assert result["context"] == context
         assert result["context"]["ticket_id"] == "DBC-97"
-        assert result["context"]["agent"] == "grunt"
+        assert result["context"]["agent"] == "mason"
 
 
 @pytest.mark.asyncio

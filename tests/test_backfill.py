@@ -74,26 +74,26 @@ def mock_github_prs():
         {
             "number": 100,
             "title": "feat: implement DBC-1",
-            "headRefName": "herd/grunt/dbc-1-feature",
+            "headRefName": "herd/mason/dbc-1-feature",
             "body": "Implements DBC-1",
             "createdAt": "2024-01-10T10:00:00Z",
             "mergedAt": "2024-01-11T10:00:00Z",
             "additions": 100,
             "deletions": 20,
             "changedFiles": 5,
-            "author": {"login": "grunt"},
+            "author": {"login": "mason"},
         },
         {
             "number": 101,
-            "title": "[grunt] fix: update something",
-            "headRefName": "herd/pikasso/feature-branch",
+            "title": "[mason] fix: update something",
+            "headRefName": "herd/fresco/feature-branch",
             "body": "No ticket reference",
             "createdAt": "2024-01-12T10:00:00Z",
             "mergedAt": "2024-01-13T10:00:00Z",
             "additions": 50,
             "deletions": 10,
             "changedFiles": 2,
-            "author": {"login": "pikasso"},
+            "author": {"login": "fresco"},
         },
     ]
 
@@ -122,7 +122,7 @@ def test_extract_ticket_code_from_pr():
     assert backfill.extract_ticket_code_from_pr(pr) == "DBC-123"
 
     # From branch name
-    pr = {"title": "feat: something", "headRefName": "herd/grunt/dbc-456-feature"}
+    pr = {"title": "feat: something", "headRefName": "herd/mason/dbc-456-feature"}
     assert backfill.extract_ticket_code_from_pr(pr) == "DBC-456"
 
     # From body
@@ -140,10 +140,10 @@ def test_extract_ticket_code_from_pr():
 
 def test_extract_agent_code_from_branch():
     """Test agent code extraction from branch name."""
-    assert backfill.extract_agent_code_from_branch("herd/grunt/dbc-123") == "grunt"
+    assert backfill.extract_agent_code_from_branch("herd/mason/dbc-123") == "mason"
     assert (
-        backfill.extract_agent_code_from_branch("herd/pikasso/feature-branch")
-        == "pikasso"
+        backfill.extract_agent_code_from_branch("herd/fresco/feature-branch")
+        == "fresco"
     )
     assert backfill.extract_agent_code_from_branch("feature-branch") is None
     assert backfill.extract_agent_code_from_branch("main") is None
@@ -266,7 +266,7 @@ def test_upsert_prs(mock_github_prs):
     # pr_code, ticket_code, creator_agent_instance_code, pr_branch_name, pr_title, ...
     assert pr[1] == "DBC-1"
     assert pr[2] == backfill.BACKFILL_AGENT_INSTANCE_CODE
-    assert pr[3] == "herd/grunt/dbc-1-feature"
+    assert pr[3] == "herd/mason/dbc-1-feature"
     assert pr[4] == "feat: implement DBC-1"
     assert pr[5] == 100  # lines_added
     assert pr[6] == 20  # lines_deleted
@@ -294,7 +294,7 @@ def test_insert_pr_commits(mock_commits):
     conn = db.get_connection(":memory:")
 
     with patch("backfill.fetch_pr_commits", return_value=mock_commits):
-        backfill.insert_pr_commits(conn, 100, "PR-100", "herd/grunt/dbc-1")
+        backfill.insert_pr_commits(conn, 100, "PR-100", "herd/mason/dbc-1")
 
     result = conn.execute(
         "SELECT COUNT(*) FROM herd.agent_instance_pr_activity"
@@ -315,7 +315,7 @@ def test_insert_pr_commits(mock_commits):
 
     # Test idempotency - re-insert same commits
     with patch("backfill.fetch_pr_commits", return_value=mock_commits):
-        backfill.insert_pr_commits(conn, 100, "PR-100", "herd/grunt/dbc-1")
+        backfill.insert_pr_commits(conn, 100, "PR-100", "herd/mason/dbc-1")
 
     # Still only 2 commits
     result = conn.execute(

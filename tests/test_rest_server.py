@@ -80,7 +80,7 @@ class TestRestAPI(AioHTTPTestCase):
             mock.return_value = {
                 "posted": True,
                 "event_id": "test-123",
-                "agent": "grunt",
+                "agent": "mason",
             }
 
             resp = await self.client.post(
@@ -130,11 +130,11 @@ class TestRestAPI(AioHTTPTestCase):
         with patch(
             "herd_mcp.rest_server.spawn.execute", new_callable=AsyncMock
         ) as mock:
-            mock.return_value = {"spawned": ["grunt-001"]}
+            mock.return_value = {"spawned": ["mason-001"]}
 
             resp = await self.client.post(
                 "/api/spawn",
-                json={"count": 1, "role": "grunt", "model": "claude-sonnet-4"},
+                json={"count": 1, "role": "mason", "model": "claude-sonnet-4"},
             )
             assert resp.status == 200
 
@@ -145,7 +145,7 @@ class TestRestAPI(AioHTTPTestCase):
             mock.assert_called_once()
             args = mock.call_args
             assert args[1]["count"] == 1
-            assert args[1]["role"] == "grunt"
+            assert args[1]["role"] == "mason"
             assert args[1]["model"] == "claude-sonnet-4"
 
     async def test_spawn_endpoint_missing_fields(self) -> None:
@@ -167,7 +167,7 @@ class TestRestAPI(AioHTTPTestCase):
                 "/api/assign",
                 json={
                     "ticket_id": "DBC-130",
-                    "agent_name": "grunt",
+                    "agent_name": "mason",
                     "priority": "high",
                 },
             )
@@ -180,7 +180,7 @@ class TestRestAPI(AioHTTPTestCase):
             mock.assert_called_once()
             args = mock.call_args
             assert args[1]["ticket_id"] == "DBC-130"
-            assert args[1]["agent_name"] == "grunt"
+            assert args[1]["agent_name"] == "mason"
             assert args[1]["priority"] == "high"
 
     async def test_transition_endpoint(self) -> None:
@@ -292,7 +292,7 @@ class TestRestAPI(AioHTTPTestCase):
             mock.return_value = {"success": True, "message": "Decommissioned"}
 
             resp = await self.client.post(
-                "/api/decommission", json={"agent_name": "grunt-001"}
+                "/api/decommission", json={"agent_name": "mason-001"}
             )
             assert resp.status == 200
 
@@ -302,7 +302,7 @@ class TestRestAPI(AioHTTPTestCase):
             # Verify decommission was called with correct args
             mock.assert_called_once()
             args = mock.call_args
-            assert args[0][0] == "grunt-001"
+            assert args[0][0] == "mason-001"
 
     async def test_standdown_endpoint(self) -> None:
         """Test POST /api/standdown endpoint."""
@@ -312,7 +312,7 @@ class TestRestAPI(AioHTTPTestCase):
             mock.return_value = {"success": True, "message": "Stood down"}
 
             resp = await self.client.post(
-                "/api/standdown", json={"agent_name": "grunt-001"}
+                "/api/standdown", json={"agent_name": "mason-001"}
             )
             assert resp.status == 200
 
@@ -322,7 +322,7 @@ class TestRestAPI(AioHTTPTestCase):
             # Verify standdown was called with correct args
             mock.assert_called_once()
             args = mock.call_args
-            assert args[0][0] == "grunt-001"
+            assert args[0][0] == "mason-001"
 
     async def test_harvest_endpoint(self) -> None:
         """Test POST /api/harvest endpoint."""
@@ -334,7 +334,7 @@ class TestRestAPI(AioHTTPTestCase):
             resp = await self.client.post(
                 "/api/harvest",
                 json={
-                    "agent_instance_code": "grunt-001",
+                    "agent_instance_code": "mason-001",
                     "project_path": "/tmp/test",
                 },
             )
@@ -346,7 +346,7 @@ class TestRestAPI(AioHTTPTestCase):
             # Verify execute was called with correct args
             mock.assert_called_once()
             args = mock.call_args
-            assert args[1]["agent_instance_code"] == "grunt-001"
+            assert args[1]["agent_instance_code"] == "mason-001"
             assert args[1]["project_path"] == "/tmp/test"
 
     async def test_agent_identity_from_header(self) -> None:
@@ -366,7 +366,7 @@ class TestRestAPI(AioHTTPTestCase):
             args = mock.call_args
             assert args[0][1] == "wardenstein"
 
-    @patch.dict(os.environ, {"HERD_AGENT_NAME": "shakesquill"})
+    @patch.dict(os.environ, {"HERD_AGENT_NAME": "scribe"})
     async def test_agent_identity_from_env(self) -> None:
         """Test agent identity resolution from HERD_AGENT_NAME env var."""
         with patch(
@@ -380,7 +380,7 @@ class TestRestAPI(AioHTTPTestCase):
             # Verify agent_name was passed from env
             mock.assert_called_once()
             args = mock.call_args
-            assert args[0][1] == "shakesquill"
+            assert args[0][1] == "scribe"
 
     async def test_tool_exception_returns_500(self) -> None:
         """Test that tool exceptions return 500 status."""

@@ -18,8 +18,8 @@ def seeded_db(in_memory_db):
         INSERT INTO herd.agent_def
           (agent_code, agent_role, agent_status, created_at)
         VALUES
-          ('grunt', 'backend', 'active', CURRENT_TIMESTAMP),
-          ('pikasso', 'frontend', 'active', CURRENT_TIMESTAMP),
+          ('mason', 'backend', 'active', CURRENT_TIMESTAMP),
+          ('fresco', 'frontend', 'active', CURRENT_TIMESTAMP),
           ('old-agent', 'backend', 'decommissioned', CURRENT_TIMESTAMP)
         """)
 
@@ -28,9 +28,9 @@ def seeded_db(in_memory_db):
         INSERT INTO herd.agent_instance
           (agent_instance_code, agent_code, model_code, agent_instance_started_at)
         VALUES
-          ('inst-grunt-001', 'grunt', 'claude-sonnet-4', CURRENT_TIMESTAMP),
-          ('inst-grunt-002', 'grunt', 'claude-sonnet-4', CURRENT_TIMESTAMP),
-          ('inst-pikasso-001', 'pikasso', 'claude-opus-4', CURRENT_TIMESTAMP)
+          ('inst-mason-001', 'mason', 'claude-sonnet-4', CURRENT_TIMESTAMP),
+          ('inst-mason-002', 'mason', 'claude-sonnet-4', CURRENT_TIMESTAMP),
+          ('inst-fresco-001', 'fresco', 'claude-opus-4', CURRENT_TIMESTAMP)
         """)
 
     yield conn
@@ -44,20 +44,20 @@ async def test_decommission_agent(seeded_db):
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
         result = await lifecycle.decommission(
-            agent_name="grunt",
-            current_agent="mini-mao",
+            agent_name="mason",
+            current_agent="steve",
         )
 
         assert result["success"] is True
-        assert result["target_agent"] == "grunt"
+        assert result["target_agent"] == "mason"
         assert result["previous_status"] == "active"
         assert result["new_status"] == "decommissioned"
         assert result["instances_ended"] == 2  # Two active instances
-        assert result["requested_by"] == "mini-mao"
+        assert result["requested_by"] == "steve"
 
     # Verify agent_def was updated
     agent_status = seeded_db.execute(
-        "SELECT agent_status FROM herd.agent_def WHERE agent_code = 'grunt'"
+        "SELECT agent_status FROM herd.agent_def WHERE agent_code = 'mason'"
     ).fetchone()[0]
     assert agent_status == "decommissioned"
 
@@ -65,7 +65,7 @@ async def test_decommission_agent(seeded_db):
     ended_count = seeded_db.execute("""
         SELECT COUNT(*)
         FROM herd.agent_instance
-        WHERE agent_code = 'grunt'
+        WHERE agent_code = 'mason'
           AND agent_instance_ended_at IS NOT NULL
           AND agent_instance_outcome = 'decommissioned'
         """).fetchone()[0]
@@ -89,7 +89,7 @@ async def test_decommission_nonexistent_agent(seeded_db):
 
         result = await lifecycle.decommission(
             agent_name="nonexistent",
-            current_agent="mini-mao",
+            current_agent="steve",
         )
 
         assert result["success"] is False
@@ -105,7 +105,7 @@ async def test_decommission_without_current_agent(seeded_db):
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
         result = await lifecycle.decommission(
-            agent_name="pikasso",
+            agent_name="fresco",
             current_agent=None,
         )
 
@@ -131,7 +131,7 @@ async def test_decommission_already_decommissioned(seeded_db):
 
         result = await lifecycle.decommission(
             agent_name="old-agent",
-            current_agent="mini-mao",
+            current_agent="steve",
         )
 
         # Should succeed but show previous status was decommissioned
@@ -148,20 +148,20 @@ async def test_standdown_agent(seeded_db):
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
         result = await lifecycle.standdown(
-            agent_name="grunt",
-            current_agent="mini-mao",
+            agent_name="mason",
+            current_agent="steve",
         )
 
         assert result["success"] is True
-        assert result["target_agent"] == "grunt"
+        assert result["target_agent"] == "mason"
         assert result["previous_status"] == "active"
         assert result["new_status"] == "standby"
         assert result["instances_ended"] == 2
-        assert result["requested_by"] == "mini-mao"
+        assert result["requested_by"] == "steve"
 
     # Verify agent_def was updated to standby
     agent_status = seeded_db.execute(
-        "SELECT agent_status FROM herd.agent_def WHERE agent_code = 'grunt'"
+        "SELECT agent_status FROM herd.agent_def WHERE agent_code = 'mason'"
     ).fetchone()[0]
     assert agent_status == "standby"
 
@@ -169,7 +169,7 @@ async def test_standdown_agent(seeded_db):
     ended_count = seeded_db.execute("""
         SELECT COUNT(*)
         FROM herd.agent_instance
-        WHERE agent_code = 'grunt'
+        WHERE agent_code = 'mason'
           AND agent_instance_ended_at IS NOT NULL
           AND agent_instance_outcome = 'standdown'
         """).fetchone()[0]
@@ -193,7 +193,7 @@ async def test_standdown_nonexistent_agent(seeded_db):
 
         result = await lifecycle.standdown(
             agent_name="nonexistent",
-            current_agent="mini-mao",
+            current_agent="steve",
         )
 
         assert result["success"] is False
@@ -209,7 +209,7 @@ async def test_standdown_without_current_agent(seeded_db):
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
         result = await lifecycle.standdown(
-            agent_name="pikasso",
+            agent_name="fresco",
             current_agent=None,
         )
 
@@ -242,7 +242,7 @@ async def test_standdown_agent_no_active_instances(seeded_db):
 
         result = await lifecycle.standdown(
             agent_name="inactive-agent",
-            current_agent="mini-mao",
+            current_agent="steve",
         )
 
         assert result["success"] is True
@@ -265,7 +265,7 @@ async def test_decommission_agent_no_active_instances(seeded_db):
 
         result = await lifecycle.decommission(
             agent_name="inactive-agent2",
-            current_agent="mini-mao",
+            current_agent="steve",
         )
 
         assert result["success"] is True
@@ -280,15 +280,15 @@ async def test_decommission_updates_modified_at(seeded_db):
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
         result = await lifecycle.decommission(
-            agent_name="grunt",
-            current_agent="mini-mao",
+            agent_name="mason",
+            current_agent="steve",
         )
 
         assert result["success"] is True
 
     # Verify modified_at was set
     modified_at = seeded_db.execute(
-        "SELECT modified_at FROM herd.agent_def WHERE agent_code = 'grunt'"
+        "SELECT modified_at FROM herd.agent_def WHERE agent_code = 'mason'"
     ).fetchone()[0]
     assert modified_at is not None
 
@@ -301,14 +301,14 @@ async def test_standdown_updates_modified_at(seeded_db):
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
         result = await lifecycle.standdown(
-            agent_name="pikasso",
-            current_agent="mini-mao",
+            agent_name="fresco",
+            current_agent="steve",
         )
 
         assert result["success"] is True
 
     # Verify modified_at was set
     modified_at = seeded_db.execute(
-        "SELECT modified_at FROM herd.agent_def WHERE agent_code = 'pikasso'"
+        "SELECT modified_at FROM herd.agent_def WHERE agent_code = 'fresco'"
     ).fetchone()[0]
     assert modified_at is not None

@@ -209,7 +209,7 @@ async def test_spawn_tool_uses_adapter():
             # payload variable intentionally unused - testing that function executes
             _payload = _assemble_context_payload(  # noqa: F841
                 ticket_id="DBC-100",
-                agent_code="grunt",
+                agent_code="mason",
                 model_code="claude-sonnet-4",
                 repo_root=Path("/tmp"),
                 worktree_path=Path("/tmp/worktree"),

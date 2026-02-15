@@ -21,11 +21,11 @@ def seeded_db(in_memory_db):
         INSERT INTO herd.agent_def
           (agent_code, agent_role, agent_status, created_at)
         VALUES
-          ('grunt', 'backend', 'active', CURRENT_TIMESTAMP),
-          ('pikasso', 'frontend', 'active', CURRENT_TIMESTAMP)
+          ('mason', 'backend', 'active', CURRENT_TIMESTAMP),
+          ('fresco', 'frontend', 'active', CURRENT_TIMESTAMP)
         """)
 
-    # Insert previous ended instance for grunt
+    # Insert previous ended instance for mason
     yesterday = datetime.now() - timedelta(days=1)
     conn.execute(
         """
@@ -33,18 +33,18 @@ def seeded_db(in_memory_db):
           (agent_instance_code, agent_code, model_code, ticket_code,
            agent_instance_started_at, agent_instance_ended_at, agent_instance_outcome)
         VALUES
-          ('inst-grunt-prev', 'grunt', 'claude-sonnet-4', 'DBC-100', ?, ?, 'completed')
+          ('inst-mason-prev', 'mason', 'claude-sonnet-4', 'DBC-100', ?, ?, 'completed')
         """,
         [yesterday - timedelta(hours=2), yesterday],
     )
 
-    # Insert current instance for grunt
+    # Insert current instance for mason
     conn.execute("""
         INSERT INTO herd.agent_instance
           (agent_instance_code, agent_code, model_code, ticket_code,
            agent_instance_started_at)
         VALUES
-          ('inst-grunt-current', 'grunt', 'claude-sonnet-4', 'DBC-100', CURRENT_TIMESTAMP)
+          ('inst-mason-current', 'mason', 'claude-sonnet-4', 'DBC-100', CURRENT_TIMESTAMP)
         """)
 
     # Insert ticket activity after previous session ended
@@ -53,8 +53,8 @@ def seeded_db(in_memory_db):
           (agent_instance_code, ticket_code, ticket_event_type, ticket_status,
            ticket_activity_comment, created_at)
         VALUES
-          ('inst-grunt-current', 'DBC-100', 'status_changed', 'in_review', 'Code reviewed', CURRENT_TIMESTAMP),
-          ('inst-grunt-current', 'DBC-100', 'status_changed', 'merged', 'PR merged', CURRENT_TIMESTAMP)
+          ('inst-mason-current', 'DBC-100', 'status_changed', 'in_review', 'Code reviewed', CURRENT_TIMESTAMP),
+          ('inst-mason-current', 'DBC-100', 'status_changed', 'merged', 'PR merged', CURRENT_TIMESTAMP)
         """)
 
     yield conn
@@ -67,11 +67,11 @@ async def test_catchup_with_previous_session(seeded_db):
         mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
-        result = await catchup.execute(agent_name="grunt")
+        result = await catchup.execute(agent_name="mason")
 
         assert result["since"] is not None
-        assert result["agent"] == "grunt"
-        assert result["previous_instance"] == "inst-grunt-prev"
+        assert result["agent"] == "mason"
+        assert result["previous_instance"] == "inst-mason-prev"
         assert len(result["ticket_updates"]) > 0
         assert "updates across" in result["summary"]
 
@@ -83,10 +83,10 @@ async def test_catchup_first_session(seeded_db):
         mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
-        result = await catchup.execute(agent_name="pikasso")
+        result = await catchup.execute(agent_name="fresco")
 
         assert result["since"] is None
-        assert result["agent"] == "pikasso"
+        assert result["agent"] == "fresco"
         assert len(result["ticket_updates"]) == 0
         assert "No previous session found" in result["summary"]
         assert "starting fresh" in result["summary"]
@@ -103,7 +103,7 @@ async def test_catchup_no_updates(seeded_db):
           (agent_instance_code, agent_code, model_code, ticket_code,
            agent_instance_started_at, agent_instance_ended_at, agent_instance_outcome)
         VALUES
-          ('inst-pikasso-prev', 'pikasso', 'claude-opus-4', 'DBC-200', ?, ?, 'completed')
+          ('inst-fresco-prev', 'fresco', 'claude-opus-4', 'DBC-200', ?, ?, 'completed')
         """,
         [yesterday - timedelta(hours=2), yesterday],
     )
@@ -112,7 +112,7 @@ async def test_catchup_no_updates(seeded_db):
         mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
-        result = await catchup.execute(agent_name="pikasso")
+        result = await catchup.execute(agent_name="fresco")
 
         assert result["since"] is not None
         assert len(result["ticket_updates"]) == 0
@@ -187,7 +187,7 @@ async def test_catchup_ticket_updates_format(seeded_db):
         mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
-        result = await catchup.execute(agent_name="grunt")
+        result = await catchup.execute(agent_name="mason")
 
         if len(result["ticket_updates"]) > 0:
             update = result["ticket_updates"][0]
@@ -208,7 +208,7 @@ async def test_catchup_multiple_tickets(seeded_db):
           (agent_instance_code, agent_code, model_code, ticket_code,
            agent_instance_started_at)
         VALUES
-          ('inst-grunt-ticket2', 'grunt', 'claude-sonnet-4', 'DBC-101', CURRENT_TIMESTAMP)
+          ('inst-mason-ticket2', 'mason', 'claude-sonnet-4', 'DBC-101', CURRENT_TIMESTAMP)
         """)
 
     seeded_db.execute("""
@@ -216,14 +216,14 @@ async def test_catchup_multiple_tickets(seeded_db):
           (agent_instance_code, ticket_code, ticket_event_type, ticket_status,
            ticket_activity_comment, created_at)
         VALUES
-          ('inst-grunt-ticket2', 'DBC-101', 'status_changed', 'assigned', 'New ticket', CURRENT_TIMESTAMP)
+          ('inst-mason-ticket2', 'DBC-101', 'status_changed', 'assigned', 'New ticket', CURRENT_TIMESTAMP)
         """)
 
     with patch("herd_mcp.tools.catchup.connection") as mock_context:
         mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
-        result = await catchup.execute(agent_name="grunt")
+        result = await catchup.execute(agent_name="mason")
 
         # Should include updates from both tickets
         tickets = {u["ticket"] for u in result["ticket_updates"]}
@@ -238,7 +238,7 @@ async def test_catchup_summary_formatting(seeded_db):
         mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
-        result = await catchup.execute(agent_name="grunt")
+        result = await catchup.execute(agent_name="mason")
 
         summary = result["summary"]
         # Should mention event count and ticket count
@@ -254,7 +254,7 @@ async def test_catchup_enhanced_fields(seeded_db):
         mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
-        result = await catchup.execute(agent_name="grunt")
+        result = await catchup.execute(agent_name="mason")
 
         # Verify all new fields are present
         assert "status_md" in result
@@ -314,7 +314,7 @@ async def test_catchup_with_git_repo():
         conn.execute("""
             INSERT INTO herd.agent_def
               (agent_code, agent_role, agent_status, created_at)
-            VALUES ('grunt', 'backend', 'active', CURRENT_TIMESTAMP)
+            VALUES ('mason', 'backend', 'active', CURRENT_TIMESTAMP)
         """)
 
         conn.execute(
@@ -322,7 +322,7 @@ async def test_catchup_with_git_repo():
             INSERT INTO herd.agent_instance
               (agent_instance_code, agent_code, model_code, ticket_code,
                agent_instance_started_at, agent_instance_ended_at, agent_instance_outcome)
-            VALUES ('inst-test', 'grunt', 'claude-sonnet-4', 'DBC-100', ?, ?, 'completed')
+            VALUES ('inst-test', 'mason', 'claude-sonnet-4', 'DBC-100', ?, ?, 'completed')
             """,
             [yesterday - timedelta(hours=2), yesterday],
         )
@@ -332,7 +332,7 @@ async def test_catchup_with_git_repo():
             mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
             with patch("herd_mcp.tools.catchup.Path.cwd", return_value=repo_path):
-                result = await catchup.execute(agent_name="grunt")
+                result = await catchup.execute(agent_name="mason")
 
                 # Should have git log entries
                 assert "git_log" in result
@@ -354,14 +354,14 @@ async def test_catchup_decision_records(seeded_db):
            ticket_code, created_at)
         VALUES
           ('dec-001', 'architectural', 'Need to choose DB', 'Use DuckDB',
-           'Fast and embedded', 'grunt', 'DBC-100', CURRENT_TIMESTAMP)
+           'Fast and embedded', 'mason', 'DBC-100', CURRENT_TIMESTAMP)
     """)
 
     with patch("herd_mcp.tools.catchup.connection") as mock_context:
         mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
         mock_context.return_value.__exit__ = MagicMock(return_value=None)
 
-        result = await catchup.execute(agent_name="grunt")
+        result = await catchup.execute(agent_name="mason")
 
         # Should include the decision record
         assert "decision_records" in result
@@ -370,4 +370,4 @@ async def test_catchup_decision_records(seeded_db):
             dec = result["decision_records"][0]
             assert dec["decision_id"] == "dec-001"
             assert dec["decision_type"] == "architectural"
-            assert dec["decided_by"] == "grunt"
+            assert dec["decided_by"] == "mason"
