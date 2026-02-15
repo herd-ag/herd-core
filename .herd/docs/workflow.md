@@ -29,11 +29,11 @@ Every ticket must have: a role label (backend/frontend/docs/qa), a type label (f
 
 ## Agent Spawning
 
-When the Architect assigns work, Mini-Mao spawns the appropriate agent. Every spawn includes full context -- a bare prompt with just a work description is not acceptable.
+When the Architect assigns work, Steve spawns the appropriate agent. Every spawn includes full context -- a bare prompt with just a work description is not acceptable.
 
 ### Spawn Checklist
 
-Before spawning, Mini-Mao reads and includes ALL of the following in the agent's prompt:
+Before spawning, Steve reads and includes ALL of the following in the agent's prompt:
 
 1. **Full role file**: Complete content of `.herd/roles/<agent>.md`
 2. **Craft standards**: The agent's section from `.herd/craft.md`
@@ -44,11 +44,11 @@ Before spawning, Mini-Mao reads and includes ALL of the following in the agent's
 7. **Branch protection rule**: The explicit "NEVER push to main" block
 8. **Commit + push posting**: Agent instructed to post to `#herd-feed` after every commit
 9. **Slack URL format**: `<url|display text>` requirement
-10. **Model target**: Opus or Sonnet, per HDR-0004
+10. **Model target**: Opus, Sonnet, or Haiku per HDR-0004
 
 ### Post-Spawn
 
-After spawning, Mini-Mao:
+After spawning, Steve:
 
 - Moves the Linear ticket to In Progress
 - Updates STATUS.md with the active work entry
@@ -58,7 +58,7 @@ After spawning, Mini-Mao:
 
 ## Implementation Flow
 
-Each implementing agent (Grunt, Pikasso, Gauss) follows the same core workflow:
+Each implementing agent (Mason, Fresco) follows the same core workflow:
 
 1. **Read the assignment**: Linear ticket or task description from the Architect
 2. **Create branch**: `herd/<agent>/<ticket-id>-<short-description>`
@@ -111,13 +111,13 @@ Wardenstein always posts the full QA review as a comment on the GitHub PR using 
 
 ## Merge Authority
 
-Only the Architect merges. Mini-Mao executes the merge command with `--admin` after QA passes, but the decision to merge is the Architect's.
+Only the Architect merges. Steve executes the merge command with `--admin` after QA passes, but the decision to merge is the Architect's.
 
 The flow is always:
 
 1. Implementing agent submits PR
 2. Wardenstein reviews
-3. QA PASS: Mini-Mao merges (with Architect approval)
+3. QA PASS: Steve merges (with Architect approval)
 4. QA FAIL: Back to the implementing agent for fixes
 
 "Approve as needed" means "merge after QA passes" -- not "skip QA."
@@ -134,9 +134,9 @@ The handoff contains:
 - **What Changed**: Specific files and changes (code and tests)
 - **Testing**: Status of pytest, ruff, black, mypy
 - **QA Notes**: What Wardenstein should test, known issues
-- **Documentation Notes**: What Shakesquill should document (user-facing changes)
+- **Documentation Notes**: What Scribe should document (user-facing changes)
 
-Handoffs are the primary coordination mechanism between agents. Mini-Mao monitors for stale handoffs (>24 hours unactioned) and flags them.
+Handoffs are the primary coordination mechanism between agents. Steve monitors for stale handoffs (>24 hours unactioned) and flags them.
 
 ---
 
@@ -157,11 +157,11 @@ Every agent follows the same startup sequence:
 
 ### Session End
 
-Mini-Mao at session end:
+Steve at session end:
 
 1. Updates STATUS.md with final state
 2. Reviews HDRs drafted during the session
-3. Writes session file: `.herd/sessions/mini-mao-<date>.md`
+3. Writes session file: `.herd/sessions/steve-<date>.md`
 
 Implementing agents write their own session files: `.herd/sessions/<agent>-<date>.md` with current branch, last commit, what is left, and context for the next session.
 
@@ -188,7 +188,7 @@ If an agent violates this, it is immediately visible in `git log`. Main only mov
 | `#herd-feed` | All agent activity: milestone posts, PR submissions, QA results, daily briefs |
 | `#herd-blocked` | Blockers requiring Architect attention |
 | `#introductions` | First-time agent introductions (one post per agent, ever) |
-| `#gauss-private` | Gauss and Architect iterate on analytical questions before publishing |
+| `#herd-decisions` | Agent decision records (posted via `herd_record_decision`) |
 
 ### Slack Posting Rules
 
@@ -201,12 +201,12 @@ If an agent violates this, it is immediately visible in `git log`. Main only mov
 
 ## Decision Capture
 
-Mini-Mao detects Architect decisions during sessions and captures them as Herd Decision Records (HDRs).
+Steve detects Architect decisions during sessions and captures them as Herd Decision Records (HDRs).
 
 Two modes:
 
-**Silent capture**: When the decision signal is clear (principle invocation, explicit reasoning, directive with rationale), Mini-Mao drafts the HDR immediately without interrupting the session flow.
+**Silent capture**: When the decision signal is clear (principle invocation, explicit reasoning, directive with rationale), Steve drafts the HDR immediately without interrupting the session flow.
 
-**Prompt the Architect**: When the signal is ambiguous, Mini-Mao asks: "That sounds like it could be an architectural decision -- should I capture an HDR?"
+**Prompt the Architect**: When the signal is ambiguous, Steve asks: "That sounds like it could be an architectural decision -- should I capture an HDR?"
 
 See `hdr-guide.md` for the full HDR specification.

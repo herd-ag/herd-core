@@ -2,11 +2,11 @@
 
 ## What This Is
 
-The Herd is a multi-agent AI development team. Six specialized agents -- each with a defined role, craft standards, and operational constraints -- build software under the direction of a human Architect.
+The Herd is a multi-agent AI development team. Eight specialized agents -- each with a defined role, craft standards, and operational constraints -- build software under the direction of a human Architect.
 
 This is not a framework. It is not a prompt library. It is a working team that ships production code.
 
-The codebase it builds -- dbt-conceptual -- is 100% AI-generated. Every line of code, every test, every configuration file was produced by an agent. The Architect designs, decides, and reviews. The agents implement.
+The Herd operates as a standalone governance framework (herd-core) that any project can consume. It provides execution-agnostic roles, authority models, decision capture, craft standards, and an MCP server for operational tracking. The framework is project-agnostic -- bring your own codebase and plug in through typed adapter protocols.
 
 That distinction matters. The value in this arrangement is not that AI writes code faster. The value is that the Architect operates at the architectural layer -- design, governance, quality judgment -- while the agents provide consistent execution against governed standards. The Architect reviews for drift, not syntax.
 
@@ -32,11 +32,11 @@ The Architect does not write code. The Architect writes decisions. Those decisio
 
 The Architect's review posture is fundamentally different from traditional code review. The question is not "is this syntactically correct?" -- that is the test suite's job. The question is "does this align with the architecture?" Structural drift is the failure mode, not bugs.
 
-## Mini-Mao
+## Steve
 
-Mini-Mao is the coordinator. Scrum master, not architect. Mini-Mao tracks state, drafts tickets, spawns agents, captures decisions, and reports status.
+Steve is the Avalon leader. Orchestration, not architecture. Steve tracks state, drafts tickets, spawns agents, captures decisions, and reports status.
 
-Mini-Mao never codes. Mini-Mao never decides. When the temptation arises to "just fix it" -- and it does, especially after three failed agent spawns -- Mini-Mao spawns a fourth with corrected context. The coordination role is the role.
+Steve never codes. Steve never decides. When the temptation arises to "just fix it" -- and it does, especially after three failed agent spawns -- Steve spawns a fourth with corrected context. The coordination role is the role.
 
 This constraint exists because coordination and implementation are different cognitive modes. Mixing them degrades both.
 
@@ -52,34 +52,35 @@ This is not ceremony for ceremony's sake. These constraints exist because agents
 
 ## Project Structure
 
-The `.herd/` directory contains all Herd infrastructure. The source code lives in `src/`. These are the key locations.
+The `.herd/` directory contains all Herd infrastructure. When consumed as a package via `pip install herd-core`, the `.herd/` directory ships with the package and provides default content. Consuming projects can override any file by placing their own version in their project's `.herd/` directory.
 
 ### Repository Layout
 
 ```
-dbt-conceptual/
-  src/dbt_conceptual/       # Python source code (CLI, parser, validator, exporter)
-  tests/                    # pytest test suite
-  frontend/                 # React frontend (Pikasso's domain)
-  docs/                     # User-facing documentation
-  .herd/                    # Herd agent infrastructure
+herd-core/
+  herd_core/                # Core framework (types, adapters, config, queries)
+  herd_mcp/                 # MCP server (13 tools, DuckDB backend)
+  .herd/                    # Herd agent infrastructure (ships with package)
     STATUS.md               # Current state of all work
-    craft.md                # Quality standards by role
+    craft.md                # Quality standards by role (v0.5)
     roles/                  # Agent role definitions
-      mini-mao.md
-      grunt.md
-      pikasso.md
+      steve.md
+      leonardo.md
+      mason.md
+      fresco.md
+      scribe.md
       wardenstein.md
-      shakesquill.md
-      gauss.md
-    decisions/              # Herd Decision Records (HDRs)
+      vigil.md
+      rook.md
+      gauss.md              # Inactive
+    decisions/              # Herd Decision Records (HDRs 0001-0027)
     templates/              # Standardized templates for handoffs, reviews, etc.
     handoffs/               # Active work handoff files
     sessions/               # Session logs and intro markers
-    dbt/                    # Herd MCP dbt project (Data Vault analytics)
-    mcp/                    # MCP server (Python, DuckDB backend)
-    evidence/               # Evidence.dev dashboards
-    specs/                  # Technical specifications
+    docs/                   # System documentation
+  tests/                    # pytest test suite
+  scripts/                  # Utility scripts (seed_db.py, etc.)
+  .env.example              # Environment variable template
   CLAUDE.md                 # Project guidelines for Claude Code
 ```
 
@@ -88,13 +89,17 @@ dbt-conceptual/
 | File | Purpose |
 |------|---------|
 | `.herd/STATUS.md` | Current state of all active work, blocks, and backlogs |
-| `.herd/craft.md` | Craft standards for each agent role |
+| `.herd/craft.md` | Craft standards for each agent role (v0.5) |
 | `CLAUDE.md` | Project conventions, pre-commit checklist, design decisions |
-| `.herd/decisions/*.md` | Captured architectural decisions (HDRs 0001-0014) |
+| `.herd/decisions/*.md` | Captured architectural decisions (HDRs 0001-0027) |
+| `.env.example` | Environment variable template for secrets and config |
+| `pyproject.toml` | Package configuration, dependencies, build settings |
 
 ### Herd MCP Server
 
-The Herd MCP Server is a DuckDB-backed analytics system that tracks agent activity, ticket lifecycle, and operational metrics. It uses Data Vault 2.0 modeling (HDR-0007) with a medallion architecture:
+The Herd MCP Server is a DuckDB-backed operational tracking system that provides 13 tools for agent coordination, ticket lifecycle management, decision recording, and token cost analytics. It runs as an MCP stdio server (default), REST API, or Slack daemon.
+
+The database uses Data Vault 2.0 modeling (HDR-0007) with a medallion architecture:
 
 - **Bronze**: Source extraction and staging
 - **Silver**: Data Vault (hubs, satellites, links) for temporal history
@@ -106,11 +111,13 @@ Evidence.dev dashboards (HDR-0008) sit on top, providing operational visibility 
 
 | Agent | Role | Model | Status |
 |-------|------|-------|--------|
-| Mini-Mao | Coordinator / Scrum Master | Opus | Active |
-| Grunt | Backend Developer | Sonnet | Active |
-| Pikasso | Frontend Developer | Sonnet | Active |
-| Wardenstein | QA Engineer | Opus | Active |
-| Shakesquill | Documentation Writer | Opus | Active |
-| Gauss | Data Visualization & Analytics | Sonnet | Active |
+| Steve | Avalon Leader (Orchestration, Judgment) | Opus | Active |
+| Leonardo | Metropolis Leader (Governance, Always-On Ops) | Opus | Active |
+| Wardenstein | QA Sentinel (Deep Reasoning, Pattern Intuition) | Opus | Active |
+| Scribe | Documentation Executor (Synthesis, Voice) | Opus | Active |
+| Mason | Backend Executor (Structured Implementation) | Sonnet | Active |
+| Fresco | Frontend Executor (Component Building) | Sonnet | Active |
+| Vigil | Automated QA (Mechanical Pass/Fail) | Haiku | Active |
+| Rook | Mechanical Executor (Bulk Operations) | Haiku | Active |
 
-Model assignment follows HDR-0004: Opus for agents that interpret, judge, or synthesize. Sonnet for agents that execute against governed standards.
+Model assignment follows HDR-0004 with trust-level naming (HDR-0024): Opus for agents that interpret, judge, or synthesize (personal names). Sonnet for agents that execute against governed standards. Haiku for purely mechanical agents (archetype names -- no judgment required).

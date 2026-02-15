@@ -195,7 +195,7 @@ This starts a local development server (default: `http://localhost:3000`). Dashb
 
 ### 8. Architect View (`architect.md`)
 
-**Questions answered**: How much coordination overhead does the architect (Mini-Mao) require? Is agent autonomy increasing?
+**Questions answered**: How much coordination overhead does the coordinator (Steve) require? Is agent autonomy increasing?
 
 **Key metrics**:
 - Total coordinator sessions, tickets coordinated, lifecycle events, total cost

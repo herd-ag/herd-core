@@ -59,10 +59,10 @@ Agent definitions with roles and configuration.
 
 | Column | Type | Description |
 |---|---|---|
-| `agent_code` | `TEXT PK` | Unique agent identifier (e.g., `grunt`, `wardenstein`). |
+| `agent_code` | `TEXT PK` | Unique agent identifier (e.g., `mason`, `wardenstein`). |
 | `agent_role` | `TEXT` | Agent role (e.g., `backend`, `qa`, `docs`). |
 | `agent_status` | `TEXT` | Current status (e.g., `active`). |
-| `agent_branch_prefix` | `TEXT` | Git branch prefix (e.g., `herd/grunt`). |
+| `agent_branch_prefix` | `TEXT` | Git branch prefix (e.g., `herd/mason`). |
 | `agent_email` | `TEXT` | Agent email for commits. |
 | `default_model_code` | `TEXT` | Default LLM model for this agent. |
 | `created_at` | `TIMESTAMP` | Record creation time. |

@@ -60,11 +60,11 @@ The **Decision** section is the core payload. It should read like the Architect 
 
 ## Capture Modes
 
-Mini-Mao operates in two modes when detecting decisions.
+Steve operates in two modes when detecting decisions.
 
 ### Mode 1: Silent Capture
 
-When the decision signal is clear, Mini-Mao captures it immediately without interrupting the session:
+When the decision signal is clear, Steve captures it immediately without interrupting the session:
 
 1. Detect the decision signal in the Architect's response
 2. Determine the next sequence number
@@ -75,7 +75,7 @@ When the decision signal is clear, Mini-Mao captures it immediately without inte
 
 ### Mode 2: Prompt the Architect
 
-When a response sounds like it might contain a decision but is not stated as one, Mini-Mao asks:
+When a response sounds like it might contain a decision but is not stated as one, Steve asks:
 
 > That sounds like it could be an architectural decision -- should I capture an HDR?
 > "Brief summary of what was heard"
@@ -86,7 +86,7 @@ If yes, capture it. If no, move on. Do not ask twice about the same topic.
 
 ## Detection Heuristics
 
-Mini-Mao listens for these signals:
+Steve listens for these signals:
 
 | Signal | Example | Action |
 |--------|---------|--------|
@@ -125,7 +125,7 @@ When a new decision supersedes an old one:
 
 ## Existing HDRs
 
-Fourteen decisions have been captured as of the project's current state.
+Twenty-nine decisions have been captured as of the project's current state. The table below shows the original fourteen; see `.herd/decisions/` for the complete set (HDRs 0001-0029).
 
 | HDR | Title | Scope | Principle |
 |-----|-------|-------|-----------|
@@ -158,15 +158,15 @@ Every line of code is AI-generated. The Architect designs, decides, and reviews.
 
 ### HDR-0004: Opus for interpreters, Sonnet for executors
 
-Agents that interpret, judge, or synthesize (Mini-Mao, Wardenstein, Shakesquill) run on Opus. Agents that execute against governed standards (Grunt, Pikasso, Gauss) run on Sonnet. Roughly halves implementation agent costs.
+Agents that interpret, judge, or synthesize (Steve, Wardenstein, Scribe) run on Opus. Agents that execute against governed standards (Mason, Fresco) run on Sonnet. Haiku for purely mechanical agents (Vigil, Rook).
 
 ### HDR-0005: QA before merge -- always
 
-Every PR goes through Wardenstein before merge. No exceptions. Triggered by an incident where Mini-Mao merged PRs without QA, interpreting "approve as needed" as blanket merge authority.
+Every PR goes through Wardenstein before merge. No exceptions. Triggered by an incident where the coordinator merged PRs without QA, interpreting "approve as needed" as blanket merge authority.
 
 ### HDR-0006: Never push to main
 
-No agent pushes to main. All work on feature branches. Triggered by an incident where Grunt pushed directly to main, bypassing PR flow and QA. Enforced through spawn prompts.
+No agent pushes to main. All work on feature branches. Triggered by an incident where an agent pushed directly to main, bypassing PR flow and QA. Enforced through spawn prompts.
 
 ### HDR-0007: Data Vault 2.0 for Herd MCP analytics
 
@@ -174,4 +174,4 @@ The Herd MCP Server uses Data Vault 2.0 modeling with DuckDB. Hubs for business 
 
 ### HDR-0008: Evidence.dev for Herd dashboards
 
-Evidence.dev (SQL + Markdown) for operational dashboards instead of custom React frontend. Dashboards are code -- versioned in git, reviewed in PRs, deployed as static pages. Gauss owns the full stack.
+Evidence.dev (SQL + Markdown) for operational dashboards instead of custom React frontend. Dashboards are code -- versioned in git, reviewed in PRs, deployed as static pages.
