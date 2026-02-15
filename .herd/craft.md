@@ -1,7 +1,7 @@
 # The Herd — Craft Standards
 
-**Version**: 0.3
-**Updated**: 2026-02-07
+**Version**: 0.4
+**Updated**: 2026-02-15
 
 Quality standards by role. Each agent reads their own section on startup. Cross-reference other sections when handing off to or receiving from that role.
 

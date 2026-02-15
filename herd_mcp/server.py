@@ -12,6 +12,7 @@ from .adapters import AdapterRegistry
 # Import all tool modules
 from .tools import (
     assign,
+    assume_role,
     catchup,
     lifecycle,
     log,
@@ -385,3 +386,21 @@ async def herd_record_decision(
         agent_name,
         registry,
     )
+
+
+@mcp.tool()
+async def herd_assume(agent_name: str) -> str:
+    """Assume a herd agent identity with full context.
+
+    Assembles role file, craft standards, project guidelines, current state,
+    git log, Linear tickets, handoffs, and recent HDRs into a complete
+    identity prompt.
+
+    Args:
+        agent_name: Agent code (e.g., steve, mason, fresco).
+
+    Returns:
+        Full identity prompt for the specified agent.
+    """
+    registry = get_adapter_registry()
+    return await assume_role.execute(agent_name, registry)

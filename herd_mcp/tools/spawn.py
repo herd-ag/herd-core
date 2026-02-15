@@ -12,28 +12,18 @@ from typing import TYPE_CHECKING
 from herd_mcp import linear_client
 from herd_mcp.db import connection
 
+from ._helpers import extract_craft_section, find_repo_root, read_file_safe
+
 if TYPE_CHECKING:
     from herd_mcp.adapters import AdapterRegistry
     from herd_core.adapters.repo import RepoAdapter
 
 logger = logging.getLogger(__name__)
 
-
-def _find_repo_root() -> Path:
-    """Find the repository root by looking for .git directory.
-
-    Returns:
-        Path to repository root.
-
-    Raises:
-        RuntimeError: If repository root cannot be found.
-    """
-    current = Path.cwd()
-    while current != current.parent:
-        if (current / ".git").exists() or (current / ".git").is_file():
-            return current
-        current = current.parent
-    raise RuntimeError("Could not find repository root (.git directory)")
+# Backward-compatible aliases
+_find_repo_root = find_repo_root
+_read_file_safe = read_file_safe
+_extract_craft_section = extract_craft_section
 
 
 def _create_worktree(
@@ -85,64 +75,6 @@ def _create_worktree(
         ) from e
     except Exception as e:
         raise RuntimeError(f"Failed to create worktree at {worktree_path}: {e}") from e
-
-
-def _read_file_safe(path: Path) -> str | None:
-    """Read a file safely, returning None on any error.
-
-    Args:
-        path: Path to file.
-
-    Returns:
-        File contents or None if read fails.
-    """
-    try:
-        return path.read_text()
-    except Exception as e:
-        logger.warning(f"Failed to read {path}: {e}")
-        return None
-
-
-def _extract_craft_section(craft_content: str, agent_code: str) -> str:
-    """Extract the agent-specific section from craft.md.
-
-    Args:
-        craft_content: Full contents of craft.md.
-        agent_code: Agent code (e.g., mason, fresco).
-
-    Returns:
-        Agent's section from craft.md or empty string if not found.
-    """
-    # Map agent codes to their section titles
-    section_map = {
-        "mason": "## Mason — Backend Craft Standards",
-        "fresco": "## Fresco — Frontend Craft Standards",
-        "wardenstein": "## Wardenstein — QA Craft Standards",
-        "scribe": "## Scribe — Documentation Standards",
-        "steve": "## Steve — Coordination Craft Standards",
-        "leonardo": "## Leonardo — Coordination Craft Standards",
-        "vigil": "## Vigil — Automated QA Standards",
-        "rook": "## Rook — Mechanical Execution Standards",
-    }
-
-    section_header = section_map.get(agent_code)
-    if not section_header or section_header not in craft_content:
-        logger.warning(f"Could not find craft section for {agent_code}")
-        return ""
-
-    # Extract from this section header to the next "##" marker
-    start_idx = craft_content.index(section_header)
-    rest = craft_content[start_idx:]
-
-    # Find next section header (## at start of line)
-    lines = rest.split("\n")
-    section_lines = [lines[0]]  # Include the header
-    for line in lines[1:]:
-        if line.startswith("## ") and "—" in line:
-            break
-        section_lines.append(line)
-
-    return "\n".join(section_lines)
 
 
 def _assemble_context_payload(

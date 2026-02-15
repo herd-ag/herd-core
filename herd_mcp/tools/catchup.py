@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import subprocess
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -13,91 +12,16 @@ from typing import TYPE_CHECKING, Any
 from herd_mcp.db import connection
 from herd_mcp.linear_client import search_issues
 
+from ._helpers import get_git_log, get_handoffs, get_recent_hdrs, read_status_md
+
 if TYPE_CHECKING:
     from herd_mcp.adapters import AdapterRegistry
-    from herd_core.adapters.repo import RepoAdapter
 
-
-def _read_status_md(repo_root: Path) -> dict[str, Any]:
-    """Read and parse STATUS.md file.
-
-    Args:
-        repo_root: Repository root path.
-
-    Returns:
-        Dict with parsed STATUS.md contents or empty dict if not found.
-    """
-    status_file = repo_root / ".herd" / "STATUS.md"
-    if not status_file.exists():
-        return {"exists": False, "content": None}
-
-    try:
-        content = status_file.read_text()
-        return {"exists": True, "content": content}
-    except Exception as e:
-        return {"exists": False, "error": str(e)}
-
-
-def _get_git_log(
-    repo_root: Path, since: datetime, repo_adapter: RepoAdapter | None = None
-) -> list[dict[str, str]]:
-    """Get git log since a given timestamp.
-
-    Args:
-        repo_root: Repository root path.
-        since: Start timestamp for git log.
-        repo_adapter: Optional RepoAdapter for git operations.
-
-    Returns:
-        List of commit dicts with sha, author, date, and message.
-    """
-    try:
-        # Adapter path
-        if repo_adapter:
-            commit_infos = repo_adapter.get_log(since=since, limit=50)
-            return [
-                {
-                    "sha": commit.sha,
-                    "author": commit.author,
-                    "date": commit.date,
-                    "message": commit.message,
-                }
-                for commit in commit_infos
-            ]
-        else:
-            # Existing inline subprocess fallback
-            # Format: %H (hash), %an (author name), %ai (ISO date), %s (subject)
-            result = subprocess.run(
-                [
-                    "git",
-                    "log",
-                    f"--since={since.isoformat()}",
-                    "--format=%H|||%an|||%ai|||%s",
-                ],
-                cwd=str(repo_root),
-                capture_output=True,
-                text=True,
-                check=True,
-            )
-
-            commits = []
-            for line in result.stdout.strip().split("\n"):
-                if not line:
-                    continue
-                parts = line.split("|||")
-                if len(parts) == 4:
-                    commits.append(
-                        {
-                            "sha": parts[0],
-                            "author": parts[1],
-                            "date": parts[2],
-                            "message": parts[3],
-                        }
-                    )
-
-            return commits
-    except Exception:
-        return []
+# Backward-compatible aliases
+_read_status_md = read_status_md
+_get_git_log = get_git_log
+_get_handoffs = get_handoffs
+_get_recent_hdrs = get_recent_hdrs
 
 
 async def _get_linear_tickets(
@@ -125,72 +49,6 @@ async def _get_linear_tickets(
     except Exception:
         # Linear API may not be available
         return []
-
-
-def _get_handoffs(repo_root: Path, since: datetime) -> list[dict[str, str]]:
-    """Get recent handoff files.
-
-    Args:
-        repo_root: Repository root path.
-        since: Start timestamp for filtering handoffs.
-
-    Returns:
-        List of handoff dicts with filename and modified time.
-    """
-    handoffs_dir = repo_root / ".herd" / "handoffs"
-    if not handoffs_dir.exists():
-        return []
-
-    handoffs = []
-    for handoff_file in handoffs_dir.glob("*.md"):
-        try:
-            mtime = datetime.fromtimestamp(handoff_file.stat().st_mtime)
-            if mtime >= since:
-                handoffs.append(
-                    {
-                        "filename": handoff_file.name,
-                        "modified": str(mtime),
-                        "ticket": handoff_file.stem,
-                    }
-                )
-        except Exception:
-            continue
-
-    return sorted(handoffs, key=lambda x: x["modified"], reverse=True)
-
-
-def _get_recent_hdrs(repo_root: Path, since: datetime) -> list[dict[str, str]]:
-    """Get recent Herd Decision Records.
-
-    Args:
-        repo_root: Repository root path.
-        since: Start timestamp for filtering HDRs.
-
-    Returns:
-        List of HDR dicts with filename and modified time.
-    """
-    decisions_dir = repo_root / ".herd" / "decisions"
-    if not decisions_dir.exists():
-        return []
-
-    hdrs = []
-    for hdr_file in decisions_dir.glob("*.md"):
-        try:
-            mtime = datetime.fromtimestamp(hdr_file.stat().st_mtime)
-            if mtime >= since:
-                # Extract title from filename
-                title = re.sub(r"^\d+-", "", hdr_file.stem).replace("-", " ").title()
-                hdrs.append(
-                    {
-                        "filename": hdr_file.name,
-                        "modified": str(mtime),
-                        "title": title,
-                    }
-                )
-        except Exception:
-            continue
-
-    return sorted(hdrs, key=lambda x: x["modified"], reverse=True)
 
 
 def _get_slack_decisions_threads(

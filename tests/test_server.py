@@ -41,6 +41,6 @@ async def test_all_tools_registered():
 
 @pytest.mark.asyncio
 async def test_tool_count():
-    """Test that we have exactly 12 tools registered."""
+    """Test that we have exactly 13 tools registered."""
     tools = await mcp.list_tools()
-    assert len(tools) == 12
+    assert len(tools) == 13
