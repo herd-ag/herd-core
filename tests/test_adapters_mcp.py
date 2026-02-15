@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -35,6 +36,10 @@ def test_adapter_registry_with_values():
     assert registry.repo is None
 
 
+@pytest.mark.skipif(
+    not importlib.util.find_spec("herd_notify_slack"),
+    reason="herd_notify_slack not installed"
+)
 @patch.dict("os.environ", {"HERD_SLACK_TOKEN": "test-slack-token"})
 @patch("herd_notify_slack.SlackNotifyAdapter")
 def test_get_adapter_registry_with_slack(mock_slack_adapter):
@@ -71,6 +76,10 @@ def test_get_adapter_registry_without_slack_token():
     assert registry.notify is None
 
 
+@pytest.mark.skipif(
+    not importlib.util.find_spec("herd_ticket_linear"),
+    reason="herd_ticket_linear not installed"
+)
 @patch.dict("os.environ", {"LINEAR_API_KEY": "test-linear-key"})
 @patch("herd_ticket_linear.LinearTicketAdapter")
 def test_get_adapter_registry_with_linear(mock_linear_adapter):

@@ -1,255 +1,356 @@
-"""Tests for adapter registry and wiring."""
+"""Tests for adapter protocol definitions and runtime_checkable behavior."""
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime, timezone
+from typing import Any
 
-import pytest
-from herd_mcp.adapters import AdapterRegistry
-from herd_mcp.server import get_adapter_registry
-
-
-def test_adapter_registry_creation():
-    """Test that AdapterRegistry can be created with default None values."""
-    registry = AdapterRegistry()
-
-    assert registry.notify is None
-    assert registry.tickets is None
-    assert registry.repo is None
-    assert registry.agent is None
-    assert registry.store is None
-
-
-def test_adapter_registry_with_values():
-    """Test that AdapterRegistry can hold adapter instances."""
-    mock_notify = MagicMock()
-    mock_tickets = MagicMock()
-
-    registry = AdapterRegistry(
-        notify=mock_notify,
-        tickets=mock_tickets,
-    )
-
-    assert registry.notify is mock_notify
-    assert registry.tickets is mock_tickets
-    assert registry.repo is None
+from herd_core.adapters import (
+    AgentAdapter,
+    NotifyAdapter,
+    RepoAdapter,
+    StoreAdapter,
+    TicketAdapter,
+)
+from herd_core.types import (
+    AgentRecord,
+    CommitInfo,
+    Entity,
+    Event,
+    PostResult,
+    PRRecord,
+    SpawnContext,
+    SpawnResult,
+    ThreadMessage,
+    TicketRecord,
+    TransitionResult,
+)
 
 
-@patch.dict("os.environ", {"HERD_SLACK_TOKEN": "test-slack-token"})
-@patch("herd_notify_slack.SlackNotifyAdapter")
-def test_get_adapter_registry_with_slack(mock_slack_adapter):
-    """Test that get_adapter_registry initializes SlackNotifyAdapter when token is present."""
-    # Reset the global registry
-    import herd_mcp.server
+class TestStoreAdapterProtocol:
+    """Test StoreAdapter protocol conformance checking."""
 
-    herd_mcp.server._registry = None
+    def test_protocol_is_runtime_checkable(self) -> None:
+        """StoreAdapter should be @runtime_checkable."""
+        # Verify protocol works with isinstance() - that's what @runtime_checkable enables
+        class Dummy:
+            pass
+        assert not isinstance(Dummy(), StoreAdapter)
 
-    # Create mock adapter
-    mock_instance = MagicMock()
-    mock_slack_adapter.return_value = mock_instance
+    def test_conforming_implementation_passes(self) -> None:
+        """isinstance() check passes for conforming implementation."""
 
-    # Get registry
-    registry = get_adapter_registry()
+        class ConformingStore:
+            """Minimal StoreAdapter implementation."""
 
-    # Verify SlackNotifyAdapter was called with token
-    mock_slack_adapter.assert_called_once_with(token="test-slack-token")
-    assert registry.notify is mock_instance
+            def get(self, entity_type: type[Entity], id: str) -> Entity | None:
+                return None
 
+            def list(self, entity_type: type[Entity], **filters: Any) -> list[Entity]:
+                return []
 
-@patch.dict("os.environ", {}, clear=True)
-def test_get_adapter_registry_without_slack_token():
-    """Test that get_adapter_registry skips SlackNotifyAdapter when token is missing."""
-    # Reset the global registry
-    import herd_mcp.server
+            def save(self, record: Entity) -> str:
+                return record.id
 
-    herd_mcp.server._registry = None
+            def delete(self, entity_type: type[Entity], id: str) -> None:
+                pass
 
-    # Get registry
-    registry = get_adapter_registry()
+            def append(self, event: Event) -> None:
+                pass
 
-    # Without token, notify should be None
-    assert registry.notify is None
+            def count(self, entity_type: type[Entity], **filters: Any) -> int:
+                return 0
 
+            def events(self, event_type: type[Event], **filters: Any) -> list[Event]:
+                return []
 
-@patch.dict("os.environ", {"LINEAR_API_KEY": "test-linear-key"})
-@patch("herd_ticket_linear.LinearTicketAdapter")
-def test_get_adapter_registry_with_linear(mock_linear_adapter):
-    """Test that get_adapter_registry initializes LinearTicketAdapter when key is present."""
-    # Reset the global registry
-    import herd_mcp.server
+        store = ConformingStore()
+        assert isinstance(store, StoreAdapter)
 
-    herd_mcp.server._registry = None
+    def test_non_conforming_implementation_fails(self) -> None:
+        """isinstance() check fails for non-conforming implementation."""
 
-    # Create mock adapter
-    mock_instance = MagicMock()
-    mock_linear_adapter.return_value = mock_instance
+        class NonConformingStore:
+            """Missing methods — does NOT implement StoreAdapter."""
 
-    # Get registry
-    registry = get_adapter_registry()
+            def get(self, entity_type: type[Entity], id: str) -> Entity | None:
+                return None
 
-    # Verify LinearTicketAdapter was called with api_key
-    mock_linear_adapter.assert_called_once_with(api_key="test-linear-key")
-    assert registry.tickets is mock_instance
+            # Missing other methods
+
+        store = NonConformingStore()
+        assert not isinstance(store, StoreAdapter)
 
 
-@patch.dict("os.environ", {}, clear=True)
-def test_get_adapter_registry_import_error():
-    """Test that get_adapter_registry handles ImportError gracefully."""
-    # Reset the global registry
-    import herd_mcp.server
+class TestTicketAdapterProtocol:
+    """Test TicketAdapter protocol conformance checking."""
 
-    herd_mcp.server._registry = None
+    def test_protocol_is_runtime_checkable(self) -> None:
+        """TicketAdapter should be @runtime_checkable."""
+        # Verify protocol works with isinstance() - that's what @runtime_checkable enables
+        class Dummy:
+            pass
+        assert not isinstance(Dummy(), TicketAdapter)
 
-    # Get registry (should not raise even if adapters not installed)
-    registry = get_adapter_registry()
+    def test_conforming_implementation_passes(self) -> None:
+        """isinstance() check passes for conforming implementation."""
 
-    # Should return a registry with None adapters
-    assert isinstance(registry, AdapterRegistry)
-    assert registry.notify is None
-    assert registry.tickets is None
+        class ConformingTickets:
+            """Minimal TicketAdapter implementation."""
 
+            def get(self, ticket_id: str) -> TicketRecord:
+                return TicketRecord(id=ticket_id)
 
-@pytest.mark.asyncio
-async def test_log_tool_uses_adapter(in_memory_db):
-    """Test that log tool uses NotifyAdapter when available."""
-    from herd_mcp.tools import log
+            def create(
+                self,
+                title: str,
+                **kwargs: Any,
+            ) -> str:
+                return "DBC-001"
 
-    # Create mock adapter
-    mock_notify = AsyncMock()
-    mock_notify.post = AsyncMock(return_value={"ts": "123", "channel": "C123"})
+            def update(self, ticket_id: str, **fields: Any) -> None:
+                pass
 
-    registry = AdapterRegistry(notify=mock_notify)
+            def transition(
+                self,
+                ticket_id: str,
+                to_status: str,
+                **kwargs: Any,
+            ) -> TransitionResult:
+                return TransitionResult(
+                    ticket_id=ticket_id,
+                    previous_status="backlog",
+                    new_status=to_status,
+                    event_type="transition",
+                )
 
-    # Execute with registry
-    with patch("herd_mcp.tools.log.connection", return_value=in_memory_db):
-        result = await log.execute(
-            message="Test message",
-            channel="#test",
-            await_response=False,
-            agent_name="test-agent",
-            registry=registry,
-        )
+            def add_comment(self, ticket_id: str, body: str) -> None:
+                pass
 
-    # Verify adapter was called
-    mock_notify.post.assert_called_once_with(
-        message="Test message",
-        channel="#test",
-        username="test-agent",
-    )
+            def list_tickets(self, **filters: Any) -> list[TicketRecord]:
+                return []
 
-    assert result["posted"] is True
+        tickets = ConformingTickets()
+        assert isinstance(tickets, TicketAdapter)
 
+    def test_non_conforming_implementation_fails(self) -> None:
+        """isinstance() check fails for non-conforming implementation."""
 
-@pytest.mark.asyncio
-async def test_log_tool_fallback_without_adapter(in_memory_db):
-    """Test that log tool falls back to inline implementation when adapter is None."""
-    from herd_mcp.tools import log
+        class NonConformingTickets:
+            """Missing methods."""
 
-    registry = AdapterRegistry(notify=None)
+            def get(self, ticket_id: str) -> TicketRecord:
+                return TicketRecord(id=ticket_id)
 
-    # Mock the inline _post_to_slack function
-    with (
-        patch("herd_mcp.tools.log.connection", return_value=in_memory_db),
-        patch("herd_mcp.tools.log._post_to_slack") as mock_post,
-    ):
-        mock_post.return_value = {"success": True, "response": {"ts": "123"}}
-
-        result = await log.execute(
-            message="Test message",
-            channel="#test",
-            await_response=False,
-            agent_name="test-agent",
-            registry=registry,
-        )
-
-    # Verify inline function was called
-    mock_post.assert_called_once()
-    assert result["posted"] is True
+        tickets = NonConformingTickets()
+        assert not isinstance(tickets, TicketAdapter)
 
 
-@pytest.mark.asyncio
-async def test_spawn_tool_uses_adapter():
-    """Test that spawn tool uses TicketAdapter when available."""
+class TestAgentAdapterProtocol:
+    """Test AgentAdapter protocol conformance checking."""
 
-    # Create mock adapter
-    mock_tickets = AsyncMock()
-    mock_tickets.get = AsyncMock(
-        return_value={
-            "id": "123",
-            "identifier": "DBC-100",
-            "title": "Test ticket",
-            "description": "Test description",
-        }
-    )
+    def test_protocol_is_runtime_checkable(self) -> None:
+        """AgentAdapter should be @runtime_checkable."""
+        # Verify protocol works with isinstance() - that's what @runtime_checkable enables
+        class Dummy:
+            pass
+        assert not isinstance(Dummy(), AgentAdapter)
 
-    # registry variable intentionally unused - kept for documentation
-    _registry = AdapterRegistry(tickets=mock_tickets)  # noqa: F841
+    def test_conforming_implementation_passes(self) -> None:
+        """isinstance() check passes for conforming implementation."""
 
-    # Mock the Linear client check
-    with (
-        patch("herd_mcp.tools.spawn.linear_client.is_linear_identifier", return_value=True),
-        patch("herd_mcp.tools.spawn._find_repo_root"),
-    ):
-        # Call the _assemble_context_payload helper directly to test adapter usage
-        from pathlib import Path
+        class ConformingAgent:
+            """Minimal AgentAdapter implementation."""
 
-        from herd_mcp.tools.spawn import _assemble_context_payload
+            def spawn(
+                self,
+                role: str,
+                ticket_id: str,
+                context: SpawnContext,
+                **kwargs: Any,
+            ) -> SpawnResult:
+                return SpawnResult(
+                    instance_id="agent-001",
+                    agent=role,
+                    ticket_id=ticket_id,
+                    model="test-model",
+                    worktree="/tmp/test",
+                    branch="test-branch",
+                    spawned_at=datetime.now(timezone.utc),
+                )
 
-        # This function calls the adapter to get ticket details
-        with patch("herd_mcp.tools.spawn._read_file_safe", return_value=""):
-            # payload variable intentionally unused - testing that function executes
-            _payload = _assemble_context_payload(  # noqa: F841
-                ticket_id="DBC-100",
-                agent_code="grunt",
-                model_code="claude-sonnet-4",
-                repo_root=Path("/tmp"),
-                worktree_path=Path("/tmp/worktree"),
-            )
+            def get_status(self, instance_id: str) -> AgentRecord:
+                return AgentRecord(id=instance_id)
 
-        # The payload should include ticket title and description
-        # Note: This is tested indirectly through the execute function
+            def stop(self, instance_id: str) -> None:
+                pass
+
+        agent = ConformingAgent()
+        assert isinstance(agent, AgentAdapter)
+
+    def test_non_conforming_implementation_fails(self) -> None:
+        """isinstance() check fails for non-conforming implementation."""
+
+        class NonConformingAgent:
+            """Missing methods."""
+
+            def spawn(
+                self,
+                role: str,
+                ticket_id: str,
+                context: SpawnContext,
+                **kwargs: Any,
+            ) -> SpawnResult:
+                return SpawnResult(
+                    instance_id="agent-001",
+                    agent=role,
+                    ticket_id=ticket_id,
+                    model="test-model",
+                    worktree="/tmp/test",
+                    branch="test-branch",
+                    spawned_at=datetime.now(timezone.utc),
+                )
+
+        agent = NonConformingAgent()
+        assert not isinstance(agent, AgentAdapter)
 
 
-@pytest.mark.asyncio
-async def test_transition_tool_uses_adapter(in_memory_db):
-    """Test that transition tool uses TicketAdapter when available."""
-    from herd_mcp.tools import transition
+class TestRepoAdapterProtocol:
+    """Test RepoAdapter protocol conformance checking."""
 
-    # Create mock adapter
-    mock_tickets = AsyncMock()
-    mock_tickets.transition = AsyncMock()
+    def test_protocol_is_runtime_checkable(self) -> None:
+        """RepoAdapter should be @runtime_checkable."""
+        # Verify protocol works with isinstance() - that's what @runtime_checkable enables
+        class Dummy:
+            pass
+        assert not isinstance(Dummy(), RepoAdapter)
 
-    registry = AdapterRegistry(tickets=mock_tickets)
+    def test_conforming_implementation_passes(self) -> None:
+        """isinstance() check passes for conforming implementation."""
 
-    # Insert test data
-    in_memory_db.execute(
-        """
-        INSERT INTO herd.ticket_def
-          (ticket_code, ticket_title, ticket_description, ticket_current_status,
-           created_at, modified_at)
-        VALUES ('DBC-100', 'Test', 'Description', 'backlog', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        """
-    )
+        class ConformingRepo:
+            """Minimal RepoAdapter implementation."""
 
-    # Execute with registry
-    with (
-        patch("herd_mcp.tools.transition.connection", return_value=in_memory_db),
-        patch("herd_mcp.tools.transition.linear_client.is_linear_identifier", return_value=True),
-        patch("herd_mcp.tools.transition.get_manager") as mock_manager,
-    ):
-        mock_manager.return_value.trigger_refresh = AsyncMock(
-            return_value={"status": "ok"}
-        )
+            def create_branch(self, name: str, **kwargs: Any) -> str:
+                return name
 
-        result = await transition.execute(
-            ticket_id="DBC-100",
-            to_status="in_progress",
-            blocked_by=None,
-            note=None,
-            agent_name="test-agent",
-            registry=registry,
-        )
+            def create_worktree(self, branch: str, path: str) -> str:
+                return path
 
-    # Verify adapter was called
-    mock_tickets.transition.assert_called_once_with("DBC-100", "in_progress")
-    assert result["linear_synced"] is True
+            def remove_worktree(self, path: str) -> None:
+                pass
+
+            def push(self, branch: str) -> None:
+                pass
+
+            def create_pr(
+                self,
+                title: str,
+                body: str,
+                **kwargs: Any,
+            ) -> str:
+                return "pr-001"
+
+            def get_pr(self, pr_id: str) -> PRRecord:
+                return PRRecord(id=pr_id)
+
+            def merge_pr(self, pr_id: str) -> None:
+                pass
+
+            def add_pr_comment(self, pr_id: str, body: str) -> None:
+                pass
+
+            def get_log(self, **kwargs: Any) -> list[CommitInfo]:
+                return []
+
+        repo = ConformingRepo()
+        assert isinstance(repo, RepoAdapter)
+
+    def test_non_conforming_implementation_fails(self) -> None:
+        """isinstance() check fails for non-conforming implementation."""
+
+        class NonConformingRepo:
+            """Missing methods."""
+
+            def create_branch(self, name: str, **kwargs: Any) -> str:
+                return name
+
+        repo = NonConformingRepo()
+        assert not isinstance(repo, RepoAdapter)
+
+
+class TestNotifyAdapterProtocol:
+    """Test NotifyAdapter protocol conformance checking."""
+
+    def test_protocol_is_runtime_checkable(self) -> None:
+        """NotifyAdapter should be @runtime_checkable."""
+        # Verify protocol works with isinstance() - that's what @runtime_checkable enables
+        class Dummy:
+            pass
+        assert not isinstance(Dummy(), NotifyAdapter)
+
+    def test_conforming_implementation_passes(self) -> None:
+        """isinstance() check passes for conforming implementation."""
+
+        class ConformingNotify:
+            """Minimal NotifyAdapter implementation."""
+
+            def post(
+                self,
+                message: str,
+                **kwargs: Any,
+            ) -> PostResult:
+                return PostResult(
+                    message_id="msg-001",
+                    channel="#test",
+                    timestamp="1234567890",
+                )
+
+            def post_thread(
+                self,
+                thread_id: str,
+                message: str,
+                **kwargs: Any,
+            ) -> PostResult:
+                return PostResult(
+                    message_id="msg-002",
+                    channel="#test",
+                    timestamp="1234567891",
+                )
+
+            def get_thread_replies(
+                self,
+                channel: str,
+                thread_id: str,
+            ) -> list[ThreadMessage]:
+                return []
+
+            def search(
+                self,
+                query: str,
+                **kwargs: Any,
+            ) -> list[ThreadMessage]:
+                return []
+
+        notify = ConformingNotify()
+        assert isinstance(notify, NotifyAdapter)
+
+    def test_non_conforming_implementation_fails(self) -> None:
+        """isinstance() check fails for non-conforming implementation."""
+
+        class NonConformingNotify:
+            """Missing methods."""
+
+            def post(
+                self,
+                message: str,
+                **kwargs: Any,
+            ) -> PostResult:
+                return PostResult(
+                    message_id="msg-001",
+                    channel="#test",
+                    timestamp="1234567890",
+                )
+
+        notify = NonConformingNotify()
+        assert not isinstance(notify, NotifyAdapter)
