@@ -29,6 +29,7 @@ class TestPublicAPI:
         # Verify they're runtime_checkable protocols by testing isinstance() works
         class Dummy:
             pass
+
         dummy = Dummy()
         assert not isinstance(dummy, AgentAdapter)
         assert not isinstance(dummy, StoreAdapter)

@@ -20,9 +20,7 @@ def mock_registry(mock_store):
 @pytest.mark.asyncio
 async def test_record_decision_success(mock_store, mock_registry):
     """Test successful decision recording."""
-    with patch(
-        "herd_mcp.tools.record_decision._post_to_slack_decisions"
-    ) as mock_slack:
+    with patch("herd_mcp.tools.record_decision._post_to_slack_decisions") as mock_slack:
         mock_slack.return_value = {"success": True, "response": {"ok": True}}
 
         result = await record_decision.execute(
@@ -58,9 +56,7 @@ async def test_record_decision_success(mock_store, mock_registry):
 @pytest.mark.asyncio
 async def test_record_decision_no_alternatives(mock_store, mock_registry):
     """Test decision recording without alternatives considered."""
-    with patch(
-        "herd_mcp.tools.record_decision._post_to_slack_decisions"
-    ) as mock_slack:
+    with patch("herd_mcp.tools.record_decision._post_to_slack_decisions") as mock_slack:
         mock_slack.return_value = {"success": True}
 
         result = await record_decision.execute(
@@ -105,9 +101,7 @@ async def test_record_decision_no_agent_name():
 @pytest.mark.asyncio
 async def test_record_decision_slack_failure(mock_store, mock_registry):
     """Test decision recording continues even if Slack posting fails."""
-    with patch(
-        "herd_mcp.tools.record_decision._post_to_slack_decisions"
-    ) as mock_slack:
+    with patch("herd_mcp.tools.record_decision._post_to_slack_decisions") as mock_slack:
         mock_slack.return_value = {
             "success": False,
             "error": "HERD_SLACK_TOKEN not set",
@@ -145,9 +139,7 @@ async def test_record_decision_types(mock_store, mock_registry):
         "technical",
     ]
 
-    with patch(
-        "herd_mcp.tools.record_decision._post_to_slack_decisions"
-    ) as mock_slack:
+    with patch("herd_mcp.tools.record_decision._post_to_slack_decisions") as mock_slack:
         mock_slack.return_value = {"success": True}
 
         for dec_type in decision_types:

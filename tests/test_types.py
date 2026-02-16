@@ -176,17 +176,13 @@ class TestEventSubclasses:
 
     def test_pr_event_required_fields(self) -> None:
         """PREvent requires entity_id and event_type."""
-        event = PREvent(
-            entity_id="DBC-137", event_type="commit", pr_id="pr-123"
-        )
+        event = PREvent(entity_id="DBC-137", event_type="commit", pr_id="pr-123")
         assert event.entity_id == "DBC-137"
         assert event.pr_id == "pr-123"
 
     def test_pr_event_is_frozen(self) -> None:
         """PREvent is immutable."""
-        event = PREvent(
-            entity_id="DBC-137", event_type="commit", pr_id="pr-123"
-        )
+        event = PREvent(entity_id="DBC-137", event_type="commit", pr_id="pr-123")
         with pytest.raises(FrozenInstanceError):
             event.detail = "modified"  # type: ignore[misc]
 
@@ -322,9 +318,7 @@ class TestReturnTypes:
 
     def test_thread_message_is_frozen(self) -> None:
         """ThreadMessage is immutable."""
-        msg = ThreadMessage(
-            author="Mason", text="Test message", timestamp="1234567890"
-        )
+        msg = ThreadMessage(author="Mason", text="Test message", timestamp="1234567890")
         with pytest.raises(FrozenInstanceError):
             msg.text = "Modified"  # type: ignore[misc]
 

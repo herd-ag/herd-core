@@ -32,9 +32,11 @@ class TestStoreAdapterProtocol:
 
     def test_protocol_is_runtime_checkable(self) -> None:
         """StoreAdapter should be @runtime_checkable."""
+
         # Verify protocol works with isinstance() - that's what @runtime_checkable enables
         class Dummy:
             pass
+
         assert not isinstance(Dummy(), StoreAdapter)
 
     def test_conforming_implementation_passes(self) -> None:
@@ -87,9 +89,11 @@ class TestTicketAdapterProtocol:
 
     def test_protocol_is_runtime_checkable(self) -> None:
         """TicketAdapter should be @runtime_checkable."""
+
         # Verify protocol works with isinstance() - that's what @runtime_checkable enables
         class Dummy:
             pass
+
         assert not isinstance(Dummy(), TicketAdapter)
 
     def test_conforming_implementation_passes(self) -> None:
@@ -151,9 +155,11 @@ class TestAgentAdapterProtocol:
 
     def test_protocol_is_runtime_checkable(self) -> None:
         """AgentAdapter should be @runtime_checkable."""
+
         # Verify protocol works with isinstance() - that's what @runtime_checkable enables
         class Dummy:
             pass
+
         assert not isinstance(Dummy(), AgentAdapter)
 
     def test_conforming_implementation_passes(self) -> None:
@@ -220,9 +226,11 @@ class TestRepoAdapterProtocol:
 
     def test_protocol_is_runtime_checkable(self) -> None:
         """RepoAdapter should be @runtime_checkable."""
+
         # Verify protocol works with isinstance() - that's what @runtime_checkable enables
         class Dummy:
             pass
+
         assert not isinstance(Dummy(), RepoAdapter)
 
     def test_conforming_implementation_passes(self) -> None:
@@ -284,9 +292,11 @@ class TestNotifyAdapterProtocol:
 
     def test_protocol_is_runtime_checkable(self) -> None:
         """NotifyAdapter should be @runtime_checkable."""
+
         # Verify protocol works with isinstance() - that's what @runtime_checkable enables
         class Dummy:
             pass
+
         assert not isinstance(Dummy(), NotifyAdapter)
 
     def test_conforming_implementation_passes(self) -> None:

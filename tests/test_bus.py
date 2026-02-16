@@ -16,7 +16,6 @@ from herd_mcp.bus import (
     parse_address,
 )
 
-
 # ---------------------------------------------------------------------------
 # Address parsing tests
 # ---------------------------------------------------------------------------
@@ -60,9 +59,7 @@ class TestParseAddress:
     def test_everyone_with_team(self) -> None:
         """Parse @everyone@avalon broadcast with team scope."""
         result = parse_address("@everyone@avalon")
-        assert result == ParsedAddress(
-            agent="@everyone", instance=None, team="avalon"
-        )
+        assert result == ParsedAddress(agent="@everyone", instance=None, team="avalon")
 
 
 # ---------------------------------------------------------------------------
@@ -202,7 +199,9 @@ class TestAnyoneConsumer:
 
         for mech in MECHANICAL_AGENTS:
             inbox = await bus.read(mech)
-            assert len(inbox) == 0, f"Mechanical agent {mech} should not receive @anyone"
+            assert (
+                len(inbox) == 0
+            ), f"Mechanical agent {mech} should not receive @anyone"
 
         # Non-mechanical agent should get it
         inbox = await bus.read("mason")

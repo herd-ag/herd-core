@@ -469,6 +469,7 @@ async def test_execute_with_sync_notify_adapter(seeded_store):
     # Create a mock NotifyAdapter that returns a dict-like PostResult
     class MockPostResult(dict):
         """Mock PostResult that behaves like a dict."""
+
         def __init__(self):
             super().__init__(ok=True, ts="1234567890.123", channel="C12345")
 

@@ -61,7 +61,9 @@ def test_graphql_request_auth_header():
     mock_response = MockResponse({"data": {"test": "value"}})
 
     with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-api-key-123"}):
-        with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
+        with patch(
+            "urllib.request.urlopen", return_value=mock_response
+        ) as mock_urlopen:
             _graphql_request("query { test }")
 
             # Check that the Request object was created with correct auth header

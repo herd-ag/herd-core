@@ -54,8 +54,12 @@ def _patch_repo_root(repo_path: Path):
     class MultiPatch:
         def __enter__(self):
             self.patches = [
-                _patch("herd_mcp.tools.assume_role.find_repo_root", return_value=repo_path),
-                _patch("herd_mcp.tools._helpers.find_repo_root", return_value=repo_path),
+                _patch(
+                    "herd_mcp.tools.assume_role.find_repo_root", return_value=repo_path
+                ),
+                _patch(
+                    "herd_mcp.tools._helpers.find_repo_root", return_value=repo_path
+                ),
             ]
             for p in self.patches:
                 p.__enter__()

@@ -31,7 +31,10 @@ MECHANICAL_AGENTS: frozenset[str] = frozenset({"rook", "vigil"})
 TIER_CONFIG: dict[str, dict] = {
     "leader": {"context_budget": 500, "message_types": {"directive", "inform", "flag"}},
     "senior": {"context_budget": 300, "message_types": {"directive", "inform", "flag"}},
-    "execution": {"context_budget": 200, "message_types": {"directive", "inform", "flag"}},
+    "execution": {
+        "context_budget": 200,
+        "message_types": {"directive", "inform", "flag"},
+    },
     "mechanical": {"context_budget": 0, "message_types": {"directive"}},
 }
 
@@ -146,12 +149,14 @@ def _filter_messages_by_tier(
     result: list[dict] = []
     for m in messages:
         if m.type in allowed_types:
-            result.append({
-                "from": m.from_addr,
-                "type": m.type,
-                "body": m.body,
-                "priority": m.priority,
-            })
+            result.append(
+                {
+                    "from": m.from_addr,
+                    "type": m.type,
+                    "body": m.body,
+                    "priority": m.priority,
+                }
+            )
     return result
 
 

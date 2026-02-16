@@ -305,9 +305,7 @@ def query_graph(cypher: str, params: dict | None = None) -> list[dict]:
         else:
             result = conn.execute(cypher)
     except Exception as exc:
-        raise RuntimeError(
-            f"KuzuDB query failed: {exc}. Query was: {cypher}"
-        ) from exc
+        raise RuntimeError(f"KuzuDB query failed: {exc}. Query was: {cypher}") from exc
 
     # Extract column names from the result
     columns = result.get_column_names()

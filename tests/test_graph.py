@@ -105,8 +105,20 @@ class TestNodeOperations:
         """merge_node() creates a new node."""
         from herd_mcp.graph import merge_node, query_graph
 
-        merge_node("Agent", {"id": "mason-1", "code": "mason", "role": "backend", "status": "running", "team": "core", "host": "avalon"})
-        results = query_graph("MATCH (a:Agent {id: $id}) RETURN a.code, a.role", {"id": "mason-1"})
+        merge_node(
+            "Agent",
+            {
+                "id": "mason-1",
+                "code": "mason",
+                "role": "backend",
+                "status": "running",
+                "team": "core",
+                "host": "avalon",
+            },
+        )
+        results = query_graph(
+            "MATCH (a:Agent {id: $id}) RETURN a.code, a.role", {"id": "mason-1"}
+        )
         assert len(results) == 1
         assert results[0]["a.code"] == "mason"
         assert results[0]["a.role"] == "backend"
@@ -115,9 +127,31 @@ class TestNodeOperations:
         """merge_node() updates an existing node's properties."""
         from herd_mcp.graph import merge_node, query_graph
 
-        merge_node("Agent", {"id": "mason-1", "code": "mason", "role": "backend", "status": "running", "team": "core", "host": "avalon"})
-        merge_node("Agent", {"id": "mason-1", "code": "mason", "role": "backend", "status": "completed", "team": "core", "host": "avalon"})
-        results = query_graph("MATCH (a:Agent {id: $id}) RETURN a.status", {"id": "mason-1"})
+        merge_node(
+            "Agent",
+            {
+                "id": "mason-1",
+                "code": "mason",
+                "role": "backend",
+                "status": "running",
+                "team": "core",
+                "host": "avalon",
+            },
+        )
+        merge_node(
+            "Agent",
+            {
+                "id": "mason-1",
+                "code": "mason",
+                "role": "backend",
+                "status": "completed",
+                "team": "core",
+                "host": "avalon",
+            },
+        )
+        results = query_graph(
+            "MATCH (a:Agent {id: $id}) RETURN a.status", {"id": "mason-1"}
+        )
         assert len(results) == 1
         assert results[0]["a.status"] == "completed"
 
@@ -132,14 +166,17 @@ class TestNodeOperations:
         """merge_node() works for Decision node type."""
         from herd_mcp.graph import merge_node, query_graph
 
-        merge_node("Decision", {
-            "id": "HDR-0035",
-            "title": "KuzuDB structural graph store",
-            "date": "2026-02-15",
-            "status": "accepted",
-            "scope": "core",
-            "principle": "structural_relationships",
-        })
+        merge_node(
+            "Decision",
+            {
+                "id": "HDR-0035",
+                "title": "KuzuDB structural graph store",
+                "date": "2026-02-15",
+                "status": "accepted",
+                "scope": "core",
+                "principle": "structural_relationships",
+            },
+        )
         results = query_graph("MATCH (d:Decision) RETURN d.id, d.title")
         assert len(results) == 1
         assert results[0]["d.id"] == "HDR-0035"
@@ -152,8 +189,28 @@ class TestEdgeOperations:
         """create_edge() creates a relationship between nodes."""
         from herd_mcp.graph import create_edge, merge_node, query_graph
 
-        merge_node("Agent", {"id": "mason-1", "code": "mason", "role": "backend", "status": "running", "team": "core", "host": "avalon"})
-        merge_node("Decision", {"id": "HDR-0035", "title": "KuzuDB", "date": "2026-02-15", "status": "accepted", "scope": "core", "principle": ""})
+        merge_node(
+            "Agent",
+            {
+                "id": "mason-1",
+                "code": "mason",
+                "role": "backend",
+                "status": "running",
+                "team": "core",
+                "host": "avalon",
+            },
+        )
+        merge_node(
+            "Decision",
+            {
+                "id": "HDR-0035",
+                "title": "KuzuDB",
+                "date": "2026-02-15",
+                "status": "accepted",
+                "scope": "core",
+                "principle": "",
+            },
+        )
 
         create_edge("Decides", "Agent", "mason-1", "Decision", "HDR-0035")
 
@@ -170,11 +227,33 @@ class TestEdgeOperations:
         """create_edge() supports extra properties on edges."""
         from herd_mcp.graph import create_edge, merge_node, query_graph
 
-        merge_node("Agent", {"id": "ward-1", "code": "ward", "role": "qa", "status": "running", "team": "core", "host": "avalon"})
-        merge_node("Ticket", {"id": "DBC-100", "title": "Test ticket", "status": "in_progress", "priority": "normal"})
+        merge_node(
+            "Agent",
+            {
+                "id": "ward-1",
+                "code": "ward",
+                "role": "qa",
+                "status": "running",
+                "team": "core",
+                "host": "avalon",
+            },
+        )
+        merge_node(
+            "Ticket",
+            {
+                "id": "DBC-100",
+                "title": "Test ticket",
+                "status": "in_progress",
+                "priority": "normal",
+            },
+        )
 
         create_edge(
-            "Reviews", "Agent", "ward-1", "Ticket", "DBC-100",
+            "Reviews",
+            "Agent",
+            "ward-1",
+            "Ticket",
+            "DBC-100",
             properties={"verdict": "approve", "finding_count": 3},
         )
 
@@ -208,7 +287,17 @@ class TestQueryGraph:
         """query_graph() supports parameterized queries."""
         from herd_mcp.graph import merge_node, query_graph
 
-        merge_node("Agent", {"id": "steve-1", "code": "steve", "role": "leader", "status": "running", "team": "core", "host": "avalon"})
+        merge_node(
+            "Agent",
+            {
+                "id": "steve-1",
+                "code": "steve",
+                "role": "leader",
+                "status": "running",
+                "team": "core",
+                "host": "avalon",
+            },
+        )
 
         results = query_graph(
             "MATCH (a:Agent) WHERE a.code = $code RETURN a.id",
@@ -233,7 +322,17 @@ class TestQueryGraph:
 
         get_graph_conn()
         # Insert one node so we know the table has data
-        merge_node("Agent", {"id": "real-agent", "code": "mason", "role": "backend", "status": "active", "team": "", "host": ""})
+        merge_node(
+            "Agent",
+            {
+                "id": "real-agent",
+                "code": "mason",
+                "role": "backend",
+                "status": "active",
+                "team": "",
+                "host": "",
+            },
+        )
         # Query for a non-matching value — should return empty
         results = query_graph(
             "MATCH (a:Agent) WHERE a.code = $code RETURN a.id",
@@ -261,7 +360,9 @@ class TestGraphTool:
         from herd_mcp.graph import merge_node
         from herd_mcp.tools.graph import execute
 
-        merge_node("Repository", {"id": "herd-core", "name": "herd-core", "org": "herd-ag"})
+        merge_node(
+            "Repository", {"id": "herd-core", "name": "herd-core", "org": "herd-ag"}
+        )
 
         result = await execute("MATCH (r:Repository) RETURN r.name, r.org")
 
@@ -290,15 +391,54 @@ class TestAllNodeTypes:
         """All 7 node types accept merges."""
         from herd_mcp.graph import merge_node, query_graph
 
-        merge_node("Decision", {"id": "d1", "title": "Test", "date": "2026-01-01", "status": "accepted", "scope": "core", "principle": ""})
-        merge_node("Agent", {"id": "a1", "code": "test", "role": "backend", "status": "running", "team": "core", "host": "avalon"})
-        merge_node("Ticket", {"id": "t1", "title": "Test ticket", "status": "todo", "priority": "normal"})
+        merge_node(
+            "Decision",
+            {
+                "id": "d1",
+                "title": "Test",
+                "date": "2026-01-01",
+                "status": "accepted",
+                "scope": "core",
+                "principle": "",
+            },
+        )
+        merge_node(
+            "Agent",
+            {
+                "id": "a1",
+                "code": "test",
+                "role": "backend",
+                "status": "running",
+                "team": "core",
+                "host": "avalon",
+            },
+        )
+        merge_node(
+            "Ticket",
+            {
+                "id": "t1",
+                "title": "Test ticket",
+                "status": "todo",
+                "priority": "normal",
+            },
+        )
         merge_node("File", {"id": "f1", "path": "src/main.py", "repo": "herd-core"})
         merge_node("Repository", {"id": "r1", "name": "herd-core", "org": "herd-ag"})
-        merge_node("Session", {"id": "s1", "agent": "mason", "started_at": "2026-02-15T00:00:00Z"})
+        merge_node(
+            "Session",
+            {"id": "s1", "agent": "mason", "started_at": "2026-02-15T00:00:00Z"},
+        )
         merge_node("Concept", {"id": "c1", "name": "graph"})
 
-        for label in ("Decision", "Agent", "Ticket", "File", "Repository", "Session", "Concept"):
+        for label in (
+            "Decision",
+            "Agent",
+            "Ticket",
+            "File",
+            "Repository",
+            "Session",
+            "Concept",
+        ):
             results = query_graph(f"MATCH (n:{label}) RETURN count(n) AS cnt")
             assert results[0]["cnt"] >= 1, f"Expected at least 1 {label} node"
 
@@ -311,20 +451,75 @@ class TestAllEdgeTypes:
         from herd_mcp.graph import create_edge, merge_node
 
         # Create nodes for all edge types
-        merge_node("Agent", {"id": "a1", "code": "mason", "role": "backend", "status": "running", "team": "core", "host": "avalon"})
-        merge_node("Agent", {"id": "a2", "code": "steve", "role": "leader", "status": "running", "team": "core", "host": "avalon"})
-        merge_node("Decision", {"id": "d1", "title": "D1", "date": "2026-01-01", "status": "accepted", "scope": "core", "principle": ""})
-        merge_node("Decision", {"id": "d2", "title": "D2", "date": "2026-01-02", "status": "accepted", "scope": "core", "principle": ""})
-        merge_node("Ticket", {"id": "t1", "title": "T1", "status": "todo", "priority": "normal"})
-        merge_node("Ticket", {"id": "t2", "title": "T2", "status": "blocked", "priority": "high"})
+        merge_node(
+            "Agent",
+            {
+                "id": "a1",
+                "code": "mason",
+                "role": "backend",
+                "status": "running",
+                "team": "core",
+                "host": "avalon",
+            },
+        )
+        merge_node(
+            "Agent",
+            {
+                "id": "a2",
+                "code": "steve",
+                "role": "leader",
+                "status": "running",
+                "team": "core",
+                "host": "avalon",
+            },
+        )
+        merge_node(
+            "Decision",
+            {
+                "id": "d1",
+                "title": "D1",
+                "date": "2026-01-01",
+                "status": "accepted",
+                "scope": "core",
+                "principle": "",
+            },
+        )
+        merge_node(
+            "Decision",
+            {
+                "id": "d2",
+                "title": "D2",
+                "date": "2026-01-02",
+                "status": "accepted",
+                "scope": "core",
+                "principle": "",
+            },
+        )
+        merge_node(
+            "Ticket",
+            {"id": "t1", "title": "T1", "status": "todo", "priority": "normal"},
+        )
+        merge_node(
+            "Ticket",
+            {"id": "t2", "title": "T2", "status": "blocked", "priority": "high"},
+        )
         merge_node("File", {"id": "f1", "path": "src/main.py", "repo": "herd-core"})
         merge_node("Repository", {"id": "r1", "name": "herd-core", "org": "herd-ag"})
 
         # Test each edge type
         create_edge("Decides", "Agent", "a1", "Decision", "d1")
         create_edge("Implements", "Ticket", "t1", "Decision", "d1")
-        create_edge("Touches", "Agent", "a1", "File", "f1", properties={"session_id": "s1"})
-        create_edge("Reviews", "Agent", "a1", "Ticket", "t1", properties={"verdict": "approve", "finding_count": 0})
+        create_edge(
+            "Touches", "Agent", "a1", "File", "f1", properties={"session_id": "s1"}
+        )
+        create_edge(
+            "Reviews",
+            "Agent",
+            "a1",
+            "Ticket",
+            "t1",
+            properties={"verdict": "approve", "finding_count": 0},
+        )
         create_edge("Supersedes", "Decision", "d2", "Decision", "d1")
         create_edge("DependsOn", "Decision", "d1", "Decision", "d2")
         create_edge("SpawnedBy", "Agent", "a1", "Agent", "a2")
@@ -337,9 +532,32 @@ class TestAllEdgeTypes:
         """TaggedWith REL TABLE GROUP supports multiple source types."""
         from herd_mcp.graph import create_edge, merge_node, query_graph
 
-        merge_node("Decision", {"id": "d1", "title": "D1", "date": "2026-01-01", "status": "accepted", "scope": "core", "principle": ""})
-        merge_node("Agent", {"id": "a1", "code": "mason", "role": "backend", "status": "running", "team": "core", "host": "avalon"})
-        merge_node("Ticket", {"id": "t1", "title": "T1", "status": "todo", "priority": "normal"})
+        merge_node(
+            "Decision",
+            {
+                "id": "d1",
+                "title": "D1",
+                "date": "2026-01-01",
+                "status": "accepted",
+                "scope": "core",
+                "principle": "",
+            },
+        )
+        merge_node(
+            "Agent",
+            {
+                "id": "a1",
+                "code": "mason",
+                "role": "backend",
+                "status": "running",
+                "team": "core",
+                "host": "avalon",
+            },
+        )
+        merge_node(
+            "Ticket",
+            {"id": "t1", "title": "T1", "status": "todo", "priority": "normal"},
+        )
         merge_node("Concept", {"id": "c1", "name": "graph"})
 
         # TaggedWith from Decision -> Concept

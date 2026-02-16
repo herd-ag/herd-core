@@ -159,7 +159,10 @@ class MessageBus:
             self._messages.append(msg)
         logger.info(
             "Message %s sent from %s to %s (priority=%s)",
-            msg.id, from_addr, to_addr, priority,
+            msg.id,
+            from_addr,
+            to_addr,
+            priority,
         )
         return msg
 
