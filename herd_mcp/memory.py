@@ -30,7 +30,7 @@ _db_connection = None
 _embedding_model = None
 
 
-def _get_lance_path() -> str:
+def get_lance_path() -> str:
     """Get the LanceDB database path from environment.
 
     Returns:
@@ -62,7 +62,7 @@ def get_memory_store():
         )
         raise
 
-    path = _get_lance_path()
+    path = get_lance_path()
     logger.info("Opening LanceDB at %s", path)
     _db_connection = lancedb.connect(path)
     return _db_connection

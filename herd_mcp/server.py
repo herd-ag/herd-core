@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import importlib.metadata
 import logging
 import os
+from datetime import datetime, timezone
+from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 from starlette.applications import Starlette
@@ -92,7 +95,9 @@ def get_adapter_registry() -> AdapterRegistry:
             registry.tickets = LinearTicketAdapter(api_key=linear_token)
             logger.info("Initialized LinearTicketAdapter")
         else:
-            logger.warning("HERD_TICKET_LINEAR_API_KEY not set, TicketAdapter unavailable")
+            logger.warning(
+                "HERD_TICKET_LINEAR_API_KEY not set, TicketAdapter unavailable"
+            )
     except ImportError:
         logger.info(
             "herd-ticket-linear not installed, using fallback Linear implementation"
@@ -333,9 +338,7 @@ async def herd_catchup(agent_name: str | None = None) -> dict:
 
 
 @mcp.tool()
-async def herd_decommission(
-    agent_name: str, caller_agent: str | None = None
-) -> dict:
+async def herd_decommission(agent_name: str, caller_agent: str | None = None) -> dict:
     """Permanently decommission an agent instance.
 
     Args:
@@ -351,9 +354,7 @@ async def herd_decommission(
 
 
 @mcp.tool()
-async def herd_standdown(
-    agent_name: str, caller_agent: str | None = None
-) -> dict:
+async def herd_standdown(agent_name: str, caller_agent: str | None = None) -> dict:
     """Temporarily stand down an agent instance.
 
     Args:
@@ -524,8 +525,16 @@ async def herd_remember(
     team = team or os.getenv("HERD_TEAM", "")
     host_val = host or os.getenv("HERD_HOST", "")
     return await recall.store(
-        content, memory_type, project, agent_name, repo, org, team, host_val,
-        session_id, metadata
+        content,
+        memory_type,
+        project,
+        agent_name,
+        repo,
+        org,
+        team,
+        host_val,
+        session_id,
+        metadata,
     )
 
 
@@ -624,67 +633,233 @@ async def herd_checkin(
 # ---------------------------------------------------------------------------
 
 
-def _check_store_status() -> dict[str, str]:
-    """Check availability of each embedded store.
+def _dir_size_and_mtime(dir_path: str) -> tuple[int, str]:
+    """Compute total size and most-recent mtime for a directory tree.
+
+    Walks every file under *dir_path*, sums their sizes, and tracks the
+    latest modification time.  Symbolic links are followed.
+
+    Args:
+        dir_path: Absolute or relative path to the directory.
 
     Returns:
-        Dict mapping store name to "ok" or "unavailable".
-    """
-    stores: dict[str, str] = {}
+        Tuple of (total_size_bytes, iso8601_utc_last_modified).
 
+    Raises:
+        FileNotFoundError: If *dir_path* does not exist.
+    """
+    total_size = 0
+    latest_mtime = 0.0
+
+    for root, _dirs, files in os.walk(dir_path):
+        for name in files:
+            fp = os.path.join(root, name)
+            try:
+                stat = os.stat(fp)
+                total_size += stat.st_size
+                if stat.st_mtime > latest_mtime:
+                    latest_mtime = stat.st_mtime
+            except OSError:
+                # Skip files that vanish between walk and stat.
+                continue
+
+    iso_mtime = (
+        datetime.fromtimestamp(latest_mtime, tz=timezone.utc).isoformat()
+        if latest_mtime > 0
+        else ""
+    )
+    return total_size, iso_mtime
+
+
+def _file_size_and_mtime(file_path: str) -> tuple[int, str]:
+    """Return size and mtime for a single file.
+
+    Args:
+        file_path: Absolute or relative path to the file.
+
+    Returns:
+        Tuple of (size_bytes, iso8601_utc_last_modified).
+
+    Raises:
+        FileNotFoundError: If *file_path* does not exist.
+    """
+    stat = os.stat(file_path)
+    iso_mtime = datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat()
+    return stat.st_size, iso_mtime
+
+
+def _package_meta_for_object(obj: object) -> tuple[str, str]:
+    """Resolve the installed distribution name and version for *obj*.
+
+    Uses ``importlib.metadata.packages_distributions()`` to map the
+    top-level import package to its distribution, then reads the version.
+
+    Args:
+        obj: Any Python object whose ``__class__.__module__`` identifies
+             its origin package.
+
+    Returns:
+        Tuple of (distribution_name, version).  Both fall back to
+        ``"unknown"`` when metadata resolution fails (e.g. editable
+        installs that lack dist-info).
+    """
+    unknown = ("unknown", "unknown")
+    try:
+        module = type(obj).__module__
+        if not module:
+            return unknown
+        top_level = module.split(".")[0]
+
+        pkg_map = importlib.metadata.packages_distributions()
+        dist_names = pkg_map.get(top_level)
+        if not dist_names:
+            return unknown
+
+        dist_name = dist_names[0]
+        version = importlib.metadata.version(dist_name)
+        return dist_name, version
+    except Exception:
+        return unknown
+
+
+def _check_store_status() -> dict[str, dict[str, object]]:
+    """Check availability and filesystem metadata of each embedded store.
+
+    Returns a dict keyed by store name.  Each value is a dict with at
+    least ``status`` (``"ok"`` | ``"unavailable"``), and when available:
+    ``path``, ``size_bytes``, ``last_modified``.
+
+    Returns:
+        Dict mapping store name to enriched status dict.
+    """
+    stores: dict[str, dict[str, object]] = {}
+
+    # --- DuckDB (single file) -----------------------------------------
     try:
         registry = get_adapter_registry()
-        stores["duckdb"] = "ok" if registry.store is not None else "unavailable"
+        if registry.store is not None:
+            db_path: str = getattr(registry.store, "path", "")
+            entry: dict[str, object] = {"status": "ok", "path": db_path}
+            if db_path and db_path != ":memory:":
+                try:
+                    size, mtime = _file_size_and_mtime(db_path)
+                    entry["size_bytes"] = size
+                    entry["last_modified"] = mtime
+                except FileNotFoundError:
+                    entry["size_bytes"] = 0
+                    entry["last_modified"] = ""
+            else:
+                entry["size_bytes"] = 0
+                entry["last_modified"] = ""
+            stores["duckdb"] = entry
+        else:
+            stores["duckdb"] = {"status": "unavailable"}
     except Exception:
-        stores["duckdb"] = "unavailable"
+        stores["duckdb"] = {"status": "unavailable"}
 
+    # --- LanceDB (directory) ------------------------------------------
     try:
-        from .memory import get_memory_store
+        from .memory import get_lance_path, get_memory_store
 
         get_memory_store()
-        stores["lancedb"] = "ok"
+        lance_path = get_lance_path()
+        entry = {"status": "ok", "path": lance_path}
+        try:
+            if Path(lance_path).is_dir():
+                size, mtime = _dir_size_and_mtime(lance_path)
+            else:
+                size, mtime = _file_size_and_mtime(lance_path)
+            entry["size_bytes"] = size
+            entry["last_modified"] = mtime
+        except FileNotFoundError:
+            entry["size_bytes"] = 0
+            entry["last_modified"] = ""
+        stores["lancedb"] = entry
     except Exception:
-        stores["lancedb"] = "unavailable"
+        stores["lancedb"] = {"status": "unavailable"}
 
+    # --- KuzuDB (directory) -------------------------------------------
     try:
-        from .graph import is_available
+        from .graph import get_graph_path, is_available
 
-        stores["kuzudb"] = "ok" if is_available() else "unavailable"
+        if is_available():
+            kuzu_path = get_graph_path()
+            entry = {"status": "ok", "path": kuzu_path}
+            try:
+                if Path(kuzu_path).is_dir():
+                    size, mtime = _dir_size_and_mtime(kuzu_path)
+                else:
+                    size, mtime = _file_size_and_mtime(kuzu_path)
+                entry["size_bytes"] = size
+                entry["last_modified"] = mtime
+            except FileNotFoundError:
+                entry["size_bytes"] = 0
+                entry["last_modified"] = ""
+            stores["kuzudb"] = entry
+        else:
+            stores["kuzudb"] = {"status": "unavailable"}
     except Exception:
-        stores["kuzudb"] = "unavailable"
+        stores["kuzudb"] = {"status": "unavailable"}
 
     return stores
 
 
+def _adapter_info(adapter: object | None) -> dict[str, str]:
+    """Build an enriched status dict for a single adapter.
+
+    Args:
+        adapter: The adapter instance, or ``None`` if not installed.
+
+    Returns:
+        Dict with ``status``, ``package``, and ``version``.
+    """
+    if adapter is None:
+        return {"status": "unavailable", "package": "unknown", "version": "unknown"}
+
+    pkg, ver = _package_meta_for_object(adapter)
+    return {"status": "ok", "package": pkg, "version": ver}
+
+
 @mcp.custom_route("/health", methods=["GET"])
 async def health_check(request: Request) -> JSONResponse:
-    """Health check with adapter and store status."""
+    """Health check with enriched adapter and store metadata.
+
+    Returns JSON with top-level ``status``, ``version``, per-adapter
+    package/version info, and per-store path/size/mtime data.
+    """
     try:
         registry = get_adapter_registry()
         adapters = {
-            "store": "ok" if registry.store is not None else "unavailable",
-            "notify": "ok" if registry.notify is not None else "unavailable",
-            "tickets": "ok" if registry.tickets is not None else "unavailable",
-            "repo": "ok" if registry.repo is not None else "unavailable",
-            "agent": "ok" if registry.agent is not None else "unavailable",
+            "store": _adapter_info(registry.store),
+            "notify": _adapter_info(registry.notify),
+            "tickets": _adapter_info(registry.tickets),
+            "repo": _adapter_info(registry.repo),
+            "agent": _adapter_info(registry.agent),
         }
     except Exception:
+        unavailable = {
+            "status": "unavailable",
+            "package": "unknown",
+            "version": "unknown",
+        }
         adapters = {
-            "store": "unavailable",
-            "notify": "unavailable",
-            "tickets": "unavailable",
-            "repo": "unavailable",
-            "agent": "unavailable",
+            "store": unavailable,
+            "notify": unavailable,
+            "tickets": unavailable,
+            "repo": unavailable,
+            "agent": unavailable,
         }
 
     stores = _check_store_status()
 
-    return JSONResponse({
-        "status": "ok",
-        "version": "0.2.0",
-        "adapters": adapters,
-        "stores": stores,
-    })
+    return JSONResponse(
+        {
+            "status": "ok",
+            "version": "0.2.0",
+            "adapters": adapters,
+            "stores": stores,
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
