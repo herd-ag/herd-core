@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 
@@ -27,7 +26,6 @@ from herd_mcp.tools.checkin import (
     execute,
 )
 
-
 # ---------------------------------------------------------------------------
 # CheckinRegistry tests
 # ---------------------------------------------------------------------------
@@ -40,7 +38,9 @@ class TestCheckinRegistry:
     async def test_record_and_get_active(self) -> None:
         """Recording a checkin makes it visible in get_active."""
         reg = CheckinRegistry()
-        await reg.record("mason.inst-001@avalon", "working on DBC-99", "mason", "avalon")
+        await reg.record(
+            "mason.inst-001@avalon", "working on DBC-99", "mason", "avalon"
+        )
 
         active = reg.get_active()
         assert "mason.inst-001@avalon" in active
@@ -91,7 +91,9 @@ class TestCheckinRegistry:
 
         # Manually backdate the entry
         entry = reg._entries["mason.inst-001@avalon"]
-        entry.timestamp = datetime.now(UTC) - UNRESPONSIVE_THRESHOLD - timedelta(seconds=1)
+        entry.timestamp = (
+            datetime.now(UTC) - UNRESPONSIVE_THRESHOLD - timedelta(seconds=1)
+        )
 
         active = reg.get_active()
         assert len(active) == 0
@@ -194,9 +196,7 @@ class TestCheckinExecute:
 
         await bus.send("steve@avalon", "mason", "do the thing", msg_type="directive")
 
-        result = await execute(
-            "checking in", "mason", bus=bus, checkin_registry=reg
-        )
+        result = await execute("checking in", "mason", bus=bus, checkin_registry=reg)
 
         assert len(result["messages"]) == 1
         assert result["messages"][0]["body"] == "do the thing"
@@ -214,7 +214,9 @@ class TestCheckinExecute:
         await execute("checking in", "mason", bus=bus, checkin_registry=reg)
 
         # Second checkin should have no messages
-        result = await execute("checking in again", "mason", bus=bus, checkin_registry=reg)
+        result = await execute(
+            "checking in again", "mason", bus=bus, checkin_registry=reg
+        )
         assert len(result["messages"]) == 0
 
     @pytest.mark.asyncio
@@ -227,9 +229,7 @@ class TestCheckinExecute:
         await reg.record("mason@avalon", "working", "mason", "avalon")
 
         with patch.dict("os.environ", {"HERD_TEAM": "avalon"}):
-            result = await execute(
-                "monitoring", "rook", bus=bus, checkin_registry=reg
-            )
+            result = await execute("monitoring", "rook", bus=bus, checkin_registry=reg)
 
         assert result["context"] is None
 
@@ -244,9 +244,7 @@ class TestCheckinExecute:
         await bus.send("mason", "rook", "fyi update", msg_type="inform")
         await bus.send("wardenstein", "rook", "quality issue", msg_type="flag")
 
-        result = await execute(
-            "monitoring", "rook", bus=bus, checkin_registry=reg
-        )
+        result = await execute("monitoring", "rook", bus=bus, checkin_registry=reg)
 
         assert len(result["messages"]) == 1
         assert result["messages"][0]["type"] == "directive"
@@ -262,9 +260,7 @@ class TestCheckinExecute:
         await bus.send("fresco", "mason", "heads up", msg_type="inform")
         await bus.send("wardenstein", "mason", "fix this", msg_type="flag")
 
-        result = await execute(
-            "working", "mason", bus=bus, checkin_registry=reg
-        )
+        result = await execute("working", "mason", bus=bus, checkin_registry=reg)
 
         assert len(result["messages"]) == 3
         types = {m["type"] for m in result["messages"]}
@@ -281,9 +277,7 @@ class TestCheckinExecute:
         await reg.record("steve.inst-003@avalon", "coordinating", "steve", "avalon")
 
         with patch.dict("os.environ", {"HERD_TEAM": "avalon"}):
-            result = await execute(
-                "working", "mason", bus=bus, checkin_registry=reg
-            )
+            result = await execute("working", "mason", bus=bus, checkin_registry=reg)
 
         assert result["context"] is not None
         assert "agents active" in result["context"]
@@ -294,10 +288,10 @@ class TestCheckinExecute:
         bus = MessageBus()
         reg = CheckinRegistry()
 
-        with patch.dict("os.environ", {"HERD_TEAM": "avalon", "HERD_INSTANCE_ID": "inst-001"}):
-            await execute(
-                "writing tests", "mason", bus=bus, checkin_registry=reg
-            )
+        with patch.dict(
+            "os.environ", {"HERD_TEAM": "avalon", "HERD_INSTANCE_ID": "inst-001"}
+        ):
+            await execute("writing tests", "mason", bus=bus, checkin_registry=reg)
 
         active = reg.get_active()
         assert len(active) == 1
@@ -417,8 +411,10 @@ class TestContextPane:
         await reg.record("gauss.inst-003@avalon", "analyzing", "gauss", "avalon")
 
         # Mock graph to return only fresco as connected
-        with patch("herd_mcp.graph.is_available", return_value=True), \
-             patch("herd_mcp.graph.query_graph", return_value=[{"a.code": "fresco"}]):
+        with (
+            patch("herd_mcp.graph.is_available", return_value=True),
+            patch("herd_mcp.graph.query_graph", return_value=[{"a.code": "fresco"}]),
+        ):
             result = _build_context_pane("mason", "avalon", "DBC-99", 500, reg)
 
         assert result is not None
@@ -451,8 +447,12 @@ class TestMessageTypeFiltering:
     def test_execution_gets_all_types(self) -> None:
         """Execution agents receive directive, inform, and flag."""
         messages = [
-            Message(id="1", from_addr="steve", to_addr="mason", body="a", type="directive"),
-            Message(id="2", from_addr="fresco", to_addr="mason", body="b", type="inform"),
+            Message(
+                id="1", from_addr="steve", to_addr="mason", body="a", type="directive"
+            ),
+            Message(
+                id="2", from_addr="fresco", to_addr="mason", body="b", type="inform"
+            ),
             Message(id="3", from_addr="warden", to_addr="mason", body="c", type="flag"),
         ]
         result = _filter_messages_by_tier(messages, "execution")
@@ -461,8 +461,12 @@ class TestMessageTypeFiltering:
     def test_mechanical_gets_only_directives(self) -> None:
         """Mechanical agents only receive directive messages."""
         messages = [
-            Message(id="1", from_addr="steve", to_addr="rook", body="a", type="directive"),
-            Message(id="2", from_addr="fresco", to_addr="rook", body="b", type="inform"),
+            Message(
+                id="1", from_addr="steve", to_addr="rook", body="a", type="directive"
+            ),
+            Message(
+                id="2", from_addr="fresco", to_addr="rook", body="b", type="inform"
+            ),
             Message(id="3", from_addr="warden", to_addr="rook", body="c", type="flag"),
         ]
         result = _filter_messages_by_tier(messages, "mechanical")
@@ -472,8 +476,12 @@ class TestMessageTypeFiltering:
     def test_leader_gets_all_types(self) -> None:
         """Leaders receive all message types."""
         messages = [
-            Message(id="1", from_addr="mason", to_addr="steve", body="a", type="directive"),
-            Message(id="2", from_addr="fresco", to_addr="steve", body="b", type="inform"),
+            Message(
+                id="1", from_addr="mason", to_addr="steve", body="a", type="directive"
+            ),
+            Message(
+                id="2", from_addr="fresco", to_addr="steve", body="b", type="inform"
+            ),
             Message(id="3", from_addr="warden", to_addr="steve", body="c", type="flag"),
         ]
         result = _filter_messages_by_tier(messages, "leader")

@@ -12,7 +12,6 @@ from herd_core.types import (
     LifecycleEvent,
     ReviewRecord,
     TicketEvent,
-    TicketPriority,
     TicketRecord,
     TokenEvent,
 )

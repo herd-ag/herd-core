@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from herd_core.types import (
@@ -175,15 +175,9 @@ async def test_transition_linear_sync_success(seeded_store, seeded_registry):
             return_value={"status": "success"}
         )
 
-        with patch(
-            "herd_mcp.linear_client.is_linear_identifier", return_value=True
-        ):
-            with patch(
-                "herd_mcp.linear_client.get_issue", return_value=linear_issue
-            ):
-                with patch(
-                    "herd_mcp.linear_client.update_issue_state"
-                ) as mock_update:
+        with patch("herd_mcp.linear_client.is_linear_identifier", return_value=True):
+            with patch("herd_mcp.linear_client.get_issue", return_value=linear_issue):
+                with patch("herd_mcp.linear_client.update_issue_state") as mock_update:
                     result = await transition.execute(
                         ticket_id="DBC-100",
                         to_status="done",
@@ -217,12 +211,8 @@ async def test_transition_linear_sync_failure(seeded_store, seeded_registry):
             return_value={"status": "success"}
         )
 
-        with patch(
-            "herd_mcp.linear_client.is_linear_identifier", return_value=True
-        ):
-            with patch(
-                "herd_mcp.linear_client.get_issue", return_value=linear_issue
-            ):
+        with patch("herd_mcp.linear_client.is_linear_identifier", return_value=True):
+            with patch("herd_mcp.linear_client.get_issue", return_value=linear_issue):
                 with patch(
                     "herd_mcp.linear_client.update_issue_state",
                     side_effect=Exception("API error"),

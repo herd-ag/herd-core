@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from herd_core.types import (
     AgentRecord,
     AgentState,
     LifecycleEvent,
-    TicketEvent,
     TicketRecord,
 )
 from herd_mcp.adapters import AdapterRegistry
@@ -233,9 +232,7 @@ async def test_spawn_with_ticket_creates_worktree(seeded_store, mock_registry):
     mock_worktree = Path("/private/tmp/mason-dbc126")
 
     with patch("herd_mcp.tools.spawn._find_repo_root", return_value=mock_repo_root):
-        with patch(
-            "herd_mcp.tools.spawn._create_worktree", return_value=mock_worktree
-        ):
+        with patch("herd_mcp.tools.spawn._create_worktree", return_value=mock_worktree):
             with patch("herd_mcp.tools.spawn._read_file_safe") as mock_read:
                 # Mock file reads
                 mock_read.side_effect = lambda p: {
@@ -284,7 +281,9 @@ async def test_spawn_with_ticket_creates_worktree(seeded_store, mock_registry):
 
 
 @pytest.mark.asyncio
-async def test_spawn_with_ticket_auto_registers_from_linear(seeded_store, mock_registry):
+async def test_spawn_with_ticket_auto_registers_from_linear(
+    seeded_store, mock_registry
+):
     """Test spawning with Linear ticket ID auto-registers ticket."""
     mock_repo_root = Path("/fake/repo")
     mock_worktree = Path("/private/tmp/mason-dbc127")
@@ -298,12 +297,8 @@ async def test_spawn_with_ticket_auto_registers_from_linear(seeded_store, mock_r
     }
 
     with patch("herd_mcp.tools.spawn._find_repo_root", return_value=mock_repo_root):
-        with patch(
-            "herd_mcp.tools.spawn._create_worktree", return_value=mock_worktree
-        ):
-            with patch(
-                "herd_mcp.tools.spawn._read_file_safe", return_value="content"
-            ):
+        with patch("herd_mcp.tools.spawn._create_worktree", return_value=mock_worktree):
+            with patch("herd_mcp.tools.spawn._read_file_safe", return_value="content"):
                 with patch("herd_mcp.linear_client") as mock_linear:
                     mock_linear.is_linear_identifier.return_value = True
                     mock_linear.get_issue.return_value = mock_linear_issue
@@ -352,12 +347,8 @@ async def test_spawn_with_ticket_syncs_to_linear(seeded_store, mock_registry):
     }
 
     with patch("herd_mcp.tools.spawn._find_repo_root", return_value=mock_repo_root):
-        with patch(
-            "herd_mcp.tools.spawn._create_worktree", return_value=mock_worktree
-        ):
-            with patch(
-                "herd_mcp.tools.spawn._read_file_safe", return_value="content"
-            ):
+        with patch("herd_mcp.tools.spawn._create_worktree", return_value=mock_worktree):
+            with patch("herd_mcp.tools.spawn._read_file_safe", return_value="content"):
                 with patch("herd_mcp.linear_client") as mock_linear:
                     mock_linear.is_linear_identifier.return_value = True
                     mock_linear.get_issue.return_value = mock_linear_issue

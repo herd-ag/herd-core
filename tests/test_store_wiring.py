@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 from herd_core.types import (
@@ -20,7 +20,15 @@ from herd_core.types import (
     TicketRecord,
 )
 from herd_mcp.adapters import AdapterRegistry
-from herd_mcp.tools import assign, lifecycle, log, metrics, record_decision, status, transition
+from herd_mcp.tools import (
+    assign,
+    lifecycle,
+    log,
+    metrics,
+    record_decision,
+    status,
+    transition,
+)
 
 
 @pytest.fixture
@@ -153,9 +161,7 @@ async def test_transition_with_store(seeded_store, seeded_registry):
 @pytest.mark.asyncio
 async def test_record_decision_with_store(mock_store, mock_registry):
     """Test record_decision works with StoreAdapter."""
-    with patch(
-        "herd_mcp.tools.record_decision._post_to_slack_decisions"
-    ) as mock_slack:
+    with patch("herd_mcp.tools.record_decision._post_to_slack_decisions") as mock_slack:
         mock_slack.return_value = {"success": True}
 
         result = await record_decision.execute(
@@ -187,7 +193,9 @@ async def test_status_with_registry(seeded_store, seeded_registry):
 @pytest.mark.asyncio
 async def test_metrics_with_registry(seeded_store, seeded_registry):
     """Test metrics works with StoreAdapter."""
-    result = await metrics.execute("cost_per_ticket", None, None, "mason", seeded_registry)
+    result = await metrics.execute(
+        "cost_per_ticket", None, None, "mason", seeded_registry
+    )
 
     assert "data" in result
     assert "summary" in result
