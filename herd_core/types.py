@@ -93,6 +93,8 @@ class AgentRecord(Entity):
     spawned_by: str | None = None
     started_at: datetime | None = None
     ended_at: datetime | None = None
+    craft_version: str | None = None
+    personality_version: str | None = None
 
 
 @dataclass
@@ -107,6 +109,8 @@ class TicketRecord(Entity):
     assignee: str | None = None
     labels: list[str] = field(default_factory=list)
     acceptance_criteria: str | None = None
+    tshirt_size: str | None = None
+    sprint_id: str | None = None
 
 
 @dataclass
@@ -137,6 +141,10 @@ class DecisionRecord(Entity):
     principle: str | None = None
     scope: str | None = None
     status: str = "accepted"
+    context: str | None = None
+    rationale: str | None = None
+    alternatives_considered: str | None = None
+    ticket_id: str | None = None
 
 
 @dataclass
@@ -149,6 +157,8 @@ class ReviewRecord(Entity):
     verdict: str = ""
     body: str = ""
     findings_count: int = 0
+    round: int | None = None
+    duration_minutes: float | None = None
 
 
 @dataclass
@@ -161,6 +171,8 @@ class ModelRecord(Entity):
     output_cost_per_token: Decimal = Decimal("0")
     context_window: int = 0
     target_role: str | None = None
+    cache_read_cost_per_m: Decimal | None = None
+    cache_create_cost_per_m: Decimal | None = None
 
 
 @dataclass
@@ -173,6 +185,7 @@ class SprintRecord(Entity):
     started_at: datetime | None = None
     ended_at: datetime | None = None
     goal: str | None = None
+    planned_end_at: datetime | None = None
 
 
 # ============================================================
@@ -198,6 +211,10 @@ class TicketEvent(Event):
     elapsed_minutes: float | None = None
     note: str | None = None
     blocked_by: list[str] = field(default_factory=list)
+    sprint_id: str | None = None
+    blocker_ticket_id: str | None = None
+    blocker_description: str | None = None
+    handoff_to_agent: str | None = None
 
 
 @dataclass(frozen=True)
@@ -221,6 +238,7 @@ class ReviewEvent(Event):
     pr_id: str = ""
     verdict: str = ""
     detail: str = ""
+    finding_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -234,6 +252,8 @@ class TokenEvent(Event):
     total_tokens: int = 0
     cost_usd: Decimal = Decimal("0")
     context_utilization: Decimal = Decimal("0")
+    cache_read_tokens: int = 0
+    cache_create_tokens: int = 0
 
 
 # ============================================================
