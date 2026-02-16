@@ -251,6 +251,8 @@ async def execute(
                             }
                             for msg in thread_messages
                         ]
+                        if responses:
+                            break
                     except Exception:
                         responses = []
                 else:
@@ -263,7 +265,8 @@ async def execute(
                         }
                         for reply in replies
                     ]
-                    break
+                    if replies:
+                        break
 
     return {
         "posted": posted,

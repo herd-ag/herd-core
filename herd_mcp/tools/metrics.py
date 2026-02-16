@@ -152,7 +152,7 @@ def _query_cost_per_ticket(
     filters: dict = {}
     if since:
         filters["since"] = since
-    token_events: list[TokenEvent] = store.events(TokenEvent, **filters)  # type: ignore[assignment]
+    token_events: list[TokenEvent] = store.events(TokenEvent, **filters)
 
     # Aggregate cost by ticket
     ticket_costs: dict[str, dict] = {}
@@ -213,7 +213,7 @@ def _query_agent_performance(
     filters: dict = {}
     if since:
         filters["since"] = since
-    lifecycle_events: list[LifecycleEvent] = store.events(LifecycleEvent, **filters)  # type: ignore[assignment]
+    lifecycle_events: list[LifecycleEvent] = store.events(LifecycleEvent, **filters)
 
     # Count PRs and reviews by agent
     agent_prs: dict[str, int] = {}
@@ -225,7 +225,7 @@ def _query_agent_performance(
                 agent_prs[agent_record.agent] = agent_prs.get(agent_record.agent, 0) + 1
 
     # Get review events
-    review_events: list[ReviewEvent] = store.events(ReviewEvent, **filters)  # type: ignore[assignment]
+    review_events: list[ReviewEvent] = store.events(ReviewEvent, **filters)
     agent_reviews: dict[str, int] = {}
     for review_event in review_events:
         agent_record = store.get(AgentRecord, review_event.instance_id)
@@ -267,7 +267,7 @@ def _query_model_efficiency(
     filters: dict = {}
     if since:
         filters["since"] = since
-    token_events: list[TokenEvent] = store.events(TokenEvent, **filters)  # type: ignore[assignment]
+    token_events: list[TokenEvent] = store.events(TokenEvent, **filters)
 
     # Aggregate by model
     model_data: dict[str, dict] = {}
@@ -460,7 +460,7 @@ def _query_pipeline_efficiency(
     filters: dict = {}
     if since:
         filters["since"] = since
-    ticket_events: list[TicketEvent] = store.events(TicketEvent, **filters)  # type: ignore[assignment]
+    ticket_events: list[TicketEvent] = store.events(TicketEvent, **filters)
 
     # Count transitions by status
     status_counts: dict[str, int] = {}
