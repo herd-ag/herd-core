@@ -30,9 +30,11 @@ classifiers = [
 ]
 dependencies = [
     "mcp>=1.0",
-    "duckdb>=1.0",
-    "aiohttp>=3.9",
+    "uvicorn>=0.27",
     "slack_sdk>=3.27",
+    "lancedb>=0.6",
+    "sentence-transformers>=2.0",
+    "kuzu>=0.11",
 ]
 
 [project.urls]
