@@ -20,11 +20,13 @@ a REST API, or flat files.
 
 from __future__ import annotations
 
+from builtins import list as builtin_list
 from typing import Any, Protocol, TypeVar, runtime_checkable
 
 from herd_core.types import Entity, Event
 
 E = TypeVar("E", bound=Entity)
+Ev = TypeVar("Ev", bound=Event)
 
 
 @runtime_checkable
@@ -106,7 +108,7 @@ class StoreAdapter(Protocol):
         """
         ...
 
-    def events(self, event_type: type[Event], **filters: Any) -> list[Event]:
+    def events(self, event_type: type[Ev], **filters: Any) -> builtin_list[Ev]:
         """Query the activity ledger.
 
         Args:

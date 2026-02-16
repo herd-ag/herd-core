@@ -140,7 +140,9 @@ async def store(
         }
 
     # Resolve agent name
-    agent = agent_name or os.getenv("HERD_AGENT_NAME", "unknown")
+    agent: str = (
+        agent_name if agent_name else (os.getenv("HERD_AGENT_NAME") or "unknown")
+    )
 
     # Auto-generate session_id if not provided
     if not session_id:

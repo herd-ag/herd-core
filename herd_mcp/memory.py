@@ -62,7 +62,7 @@ def get_memory_store():
         return _db_connection
 
     try:
-        import lancedb
+        import lancedb  # type: ignore[import-untyped]
     except ImportError:
         logger.warning(
             "lancedb is not installed. Semantic memory is unavailable. "
@@ -140,7 +140,7 @@ def ensure_memories_table(db):
     Returns:
         The LanceDB table object.
     """
-    import pyarrow as pa
+    import pyarrow as pa  # type: ignore[import-untyped]
 
     table_name = "memories"
 

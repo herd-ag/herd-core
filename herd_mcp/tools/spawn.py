@@ -505,7 +505,9 @@ async def execute(
             repo_root,
             worktree_path,
             ticket_title=ticket_record.title if ticket_record else "",
-            ticket_description=ticket_record.description if ticket_record else "",
+            ticket_description=(
+                (ticket_record.description or "") if ticket_record else ""
+            ),
             instance_code=instance_code,
             team=spawner_team,
         )

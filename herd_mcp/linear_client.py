@@ -48,7 +48,7 @@ def _graphql_request(
     if not api_key:
         raise Exception("HERD_TICKET_LINEAR_API_KEY environment variable not set")
 
-    payload = {"query": query}
+    payload: dict[str, Any] = {"query": query}
     if variables:
         payload["variables"] = variables
 

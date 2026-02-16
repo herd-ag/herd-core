@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.metadata
 import logging
 import os
+from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -75,7 +76,7 @@ def get_adapter_registry() -> AdapterRegistry:
 
     # Try to instantiate NotifyAdapter (Slack)
     try:
-        from herd_notify_slack import SlackNotifyAdapter
+        from herd_notify_slack import SlackNotifyAdapter  # type: ignore[import-untyped]
 
         slack_token = os.getenv("HERD_NOTIFY_SLACK_TOKEN")
         if slack_token:
@@ -90,7 +91,7 @@ def get_adapter_registry() -> AdapterRegistry:
 
     # Try to instantiate TicketAdapter (Linear)
     try:
-        from herd_ticket_linear import LinearTicketAdapter
+        from herd_ticket_linear import LinearTicketAdapter  # type: ignore[import-untyped]
 
         linear_token = os.getenv("HERD_TICKET_LINEAR_API_KEY")
         linear_team_id = os.getenv("HERD_TICKET_LINEAR_TEAM_ID", "")
@@ -110,7 +111,7 @@ def get_adapter_registry() -> AdapterRegistry:
 
     # Try to instantiate StoreAdapter (DuckDB)
     try:
-        from herd_store_duckdb import DuckDBStoreAdapter
+        from herd_store_duckdb import DuckDBStoreAdapter  # type: ignore[import-untyped]
 
         db_path = os.getenv("HERD_STORE_DUCKDB_PATH", ".herd/herddb.duckdb")
         registry.store = DuckDBStoreAdapter(path=db_path)
@@ -124,7 +125,7 @@ def get_adapter_registry() -> AdapterRegistry:
 
     # Try to instantiate RepoAdapter (GitHub)
     try:
-        from herd_repo_github import GitHubRepoAdapter
+        from herd_repo_github import GitHubRepoAdapter  # type: ignore[import-untyped]
 
         repo_root = os.getenv("HERD_REPO_GITHUB_PATH", ".")
         registry.repo = GitHubRepoAdapter(repo_root=repo_root)
@@ -136,7 +137,7 @@ def get_adapter_registry() -> AdapterRegistry:
 
     # Try to instantiate AgentAdapter (Claude)
     try:
-        from herd_agent_claude import ClaudeAgentAdapter
+        from herd_agent_claude import ClaudeAgentAdapter  # type: ignore[import-untyped]
 
         agent_repo_root = os.getenv("HERD_REPO_GITHUB_PATH", ".")
         registry.agent = ClaudeAgentAdapter(repo_root=agent_repo_root)
@@ -923,7 +924,9 @@ class BearerAuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self.token = token
 
-    async def dispatch(self, request: Request, call_next: ...) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
         """Check Authorization header on protected routes."""
         if request.url.path == "/health":
             return await call_next(request)
@@ -946,6 +949,6 @@ def create_http_app() -> Starlette:
 
     token = os.getenv("HERD_API_TOKEN")
     if token:
-        app.add_middleware(BearerAuthMiddleware, token=token)
+        app.add_middleware(BearerAuthMiddleware, token=token)  # type: ignore[arg-type]
 
     return app

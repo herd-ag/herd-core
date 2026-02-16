@@ -373,7 +373,7 @@ async def execute(
         logger.warning("Failed to fetch semantic context for catchup", exc_info=True)
 
     # Graph enrichment: structural neighbors of recently changed items
-    graph_context: list[dict] = []
+    graph_context = []
     try:
         from herd_mcp.graph import is_available, query_graph
 

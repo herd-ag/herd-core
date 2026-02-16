@@ -8,7 +8,7 @@ import logging
 import os
 import re
 import uuid
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from herd_core.types import AgentRecord, AgentState, LifecycleEvent
 
@@ -221,14 +221,14 @@ async def execute(
     else:
         # Fall back to inline implementation
         slack_result = _post_to_slack(message, channel, agent_name)
-        posted = slack_result.get("success", False)
+        posted = bool(slack_result.get("success", False))
 
-    responses = []
+    responses: list[dict[str, Any]] = []
     if posted and await_response:
         # Extract thread info from Slack response
-        slack_response = slack_result.get("response", {})
-        thread_ts = slack_response.get("ts")
-        channel_id = slack_response.get("channel")
+        slack_response = cast(dict[str, Any], slack_result.get("response", {}))
+        thread_ts = cast(str | None, slack_response.get("ts"))
+        channel_id = cast(str | None, slack_response.get("channel"))
         token = os.getenv("HERD_NOTIFY_SLACK_TOKEN")
 
         if thread_ts and channel_id and token:
@@ -239,25 +239,34 @@ async def execute(
                 # Use adapter if available
                 if registry.notify:
                     try:
-                        replies = registry.notify.get_thread_replies(
+                        thread_messages = registry.notify.get_thread_replies(
                             channel=channel_id,
-                            thread_ts=thread_ts,
+                            thread_id=thread_ts,
                         )
+                        responses = [
+                            {
+                                "user": msg.author,
+                                "text": msg.text,
+                                "ts": msg.timestamp,
+                            }
+                            for msg in thread_messages
+                        ]
+                        if responses:
+                            break
                     except Exception:
-                        replies = []
+                        responses = []
                 else:
                     replies = _get_thread_replies(channel_id, thread_ts, token)
-
-                if replies:
                     responses = [
                         {
-                            "user": reply.get("user", "unknown"),
-                            "text": reply.get("text", ""),
-                            "ts": reply.get("ts", ""),
+                            "user": cast(str, reply.get("user", "unknown")),
+                            "text": cast(str, reply.get("text", "")),
+                            "ts": cast(str, reply.get("ts", "")),
                         }
                         for reply in replies
                     ]
-                    break
+                    if replies:
+                        break
 
     return {
         "posted": posted,

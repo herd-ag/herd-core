@@ -11,6 +11,7 @@ import os
 from typing import Any
 
 from slack_sdk.socket_mode.aiohttp import SocketModeClient
+from slack_sdk.socket_mode.async_client import AsyncBaseSocketModeClient
 from slack_sdk.socket_mode.request import SocketModeRequest
 from slack_sdk.socket_mode.response import SocketModeResponse
 from slack_sdk.web.async_client import AsyncWebClient
@@ -104,7 +105,7 @@ class SlackListener:
         logger.info("Disconnected from Slack")
 
     async def _handle_socket_event(
-        self, client: SocketModeClient, request: SocketModeRequest
+        self, client: AsyncBaseSocketModeClient, request: SocketModeRequest
     ) -> None:
         """Handle incoming Socket Mode events.
 
@@ -137,6 +138,11 @@ class SlackListener:
                 "ts"
             )  # Use ts if not in thread
             message_ts = event.get("ts")
+
+            # Early validation - ensure required fields are present
+            if not channel_id or not user_id or not thread_ts:
+                logger.warning("Message missing required fields (channel, user, or ts)")
+                return
 
             # Filter: only #mao channel
             if channel_id != self.mao_channel_id:
@@ -173,13 +179,16 @@ class SlackListener:
 
         except Exception as e:
             logger.exception(f"Error handling message: {e}")
-            # Try to post error to thread
+            # Try to post error to thread - use type guard to help mypy
             try:
-                if "channel_id" in locals() and "thread_ts" in locals():
+                # Extract from locals with type narrowing
+                _channel_id = locals().get("channel_id")
+                _thread_ts = locals().get("thread_ts")
+                if isinstance(_channel_id, str) and isinstance(_thread_ts, str):
                     await self._post_message(
-                        channel_id,
+                        _channel_id,
                         f"Error processing message: {str(e)}",
-                        thread_ts,
+                        _thread_ts,
                     )
             except Exception:
                 pass

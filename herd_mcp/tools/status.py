@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from herd_core.queries import OperationalQueries
 from herd_core.types import (
@@ -122,7 +122,7 @@ def _get_current_sprint(store: StoreAdapter) -> dict | None:
     # Take the most recent sprint
     sprint = sprints[0]
 
-    sprint_dict = {
+    sprint_dict: dict[str, Any] = {
         "sprint_code": sprint.id,
         "sprint_title": sprint.name,
         "sprint_goal": sprint.goal,

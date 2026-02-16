@@ -18,7 +18,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import NamedTuple
 
-import diskcache
+import diskcache  # type: ignore[import-untyped]
 
 logger = logging.getLogger(__name__)
 

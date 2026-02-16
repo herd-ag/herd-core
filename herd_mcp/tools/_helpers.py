@@ -184,7 +184,7 @@ def get_git_log(
                 {
                     "sha": commit.sha,
                     "author": commit.author,
-                    "date": commit.date,
+                    "date": commit.timestamp.isoformat(),
                     "message": commit.message,
                 }
                 for commit in commit_infos
@@ -240,10 +240,18 @@ async def get_linear_tickets(
     try:
         # Search for tickets assigned to this agent or mentioning them
         if registry and registry.tickets:
-            tickets = await registry.tickets.search(f"assignee:{agent_name}")
+            ticket_records = registry.tickets.list_tickets(assignee=agent_name)
+            return [
+                {
+                    "id": t.id,
+                    "title": t.title,
+                    "status": t.status,
+                }
+                for t in ticket_records
+            ]
         else:
             tickets = search_issues(f"assignee:{agent_name}")
-        return tickets
+            return tickets
     except Exception:
         # Linear API may not be available
         return []

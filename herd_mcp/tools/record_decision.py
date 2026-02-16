@@ -257,7 +257,7 @@ async def execute(
                 channel="#herd-decisions",
                 username=agent_name,
             )
-            slack_result = {"success": True}
+            slack_result: dict[str, Any] = {"success": True}
         except Exception as e:
             slack_result = {"success": False, "error": str(e)}
     else:
