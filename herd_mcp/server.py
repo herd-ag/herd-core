@@ -46,7 +46,7 @@ mcp = FastMCP(
     port=int(os.getenv("HERD_API_PORT", "8420")),
 )
 
-# Global message bus (in-memory, lives inside the MCP server process)
+# Global message bus (in-memory hot cache + DiskCache persistence)
 bus = MessageBus()
 
 # Global checkin registry (in-memory, tracks agent heartbeats)
@@ -92,8 +92,11 @@ def get_adapter_registry() -> AdapterRegistry:
         from herd_ticket_linear import LinearTicketAdapter
 
         linear_token = os.getenv("HERD_TICKET_LINEAR_API_KEY")
+        linear_team_id = os.getenv("HERD_TICKET_LINEAR_TEAM_ID", "")
         if linear_token:
-            registry.tickets = LinearTicketAdapter(api_key=linear_token)
+            registry.tickets = LinearTicketAdapter(
+                api_key=linear_token, team_id=linear_team_id
+            )
             logger.info("Initialized LinearTicketAdapter")
         else:
             logger.warning(

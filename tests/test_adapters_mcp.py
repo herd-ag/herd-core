@@ -97,7 +97,7 @@ def test_get_adapter_registry_with_linear(mock_linear_adapter):
     registry = get_adapter_registry()
 
     # Verify LinearTicketAdapter was called with api_key
-    mock_linear_adapter.assert_called_once_with(api_key="test-linear-key")
+    mock_linear_adapter.assert_called_once_with(api_key="test-linear-key", team_id="")
     assert registry.tickets is mock_instance
 
 

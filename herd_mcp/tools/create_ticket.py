@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
 from herd_core.types import TicketEvent, TicketRecord
@@ -64,11 +65,15 @@ async def execute(
             }
         priority_int = PRIORITY_MAP[priority_lower]
 
+    # Resolve team ID from environment (HDR-0032 pattern)
+    team_id = os.getenv("HERD_TICKET_LINEAR_TEAM_ID", "")
+
     # Create ticket via adapter
     try:
         ticket_id = registry.tickets.create(
             title,
             description=description,
+            team_id=team_id or None,
             priority=priority_int,
             labels=labels,
         )

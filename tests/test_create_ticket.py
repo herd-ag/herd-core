@@ -74,6 +74,7 @@ async def test_create_ticket_success(
     mock_tickets_adapter.create.assert_called_once_with(
         "Implement dark mode",
         description="Add dark mode toggle to settings page",
+        team_id=None,
         priority=2,  # "high" maps to 2
         labels=["label-1", "label-2"],
     )
@@ -120,6 +121,7 @@ async def test_create_ticket_minimal(
     mock_tickets_adapter.create.assert_called_once_with(
         "Fix bug",
         description=None,
+        team_id=None,
         priority=None,
         labels=None,
     )
@@ -249,6 +251,7 @@ async def test_create_ticket_all_priorities(
         mock_tickets_adapter.create.assert_called_once_with(
             f"Ticket with {priority_str} priority",
             description=None,
+            team_id=None,
             priority=priority_int,
             labels=None,
         )
@@ -272,6 +275,7 @@ async def test_create_ticket_priority_case_insensitive(
     mock_tickets_adapter.create.assert_called_once_with(
         "Test ticket",
         description=None,
+        team_id=None,
         priority=2,
         labels=None,
     )
