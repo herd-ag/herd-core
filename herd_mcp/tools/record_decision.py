@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import urllib.request
 import uuid
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
-from herd_mcp.db import connection
+from herd_core.types import DecisionRecord
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from herd_mcp.adapters import AdapterRegistry
@@ -27,9 +31,9 @@ def _post_to_slack_decisions(
     Returns:
         Dict with success status and response data.
     """
-    token = os.getenv("HERD_SLACK_TOKEN")
+    token = os.getenv("HERD_NOTIFY_SLACK_TOKEN")
     if not token:
-        return {"success": False, "error": "HERD_SLACK_TOKEN not set"}
+        return {"success": False, "error": "HERD_NOTIFY_SLACK_TOKEN not set"}
 
     try:
         # Format message with ticket link if available
@@ -74,7 +78,7 @@ async def execute(
     agent_name: str | None,
     registry: AdapterRegistry | None = None,
 ) -> dict:
-    """Record an agent decision to DuckDB and post to #herd-decisions.
+    """Record an agent decision and post to #herd-decisions.
 
     Args:
         decision_type: Type of decision (architectural, implementation, pattern, etc).
@@ -95,51 +99,126 @@ async def execute(
             "error": "No agent identity provided. Cannot record decision.",
         }
 
+    if not registry or not registry.store:
+        return {"error": "StoreAdapter not configured"}
+
+    store = registry.store
     decision_id = str(uuid.uuid4())
 
-    # Adapter path for decision record
-    adapter_used = False
-    if registry and registry.store:
-        try:
-            from herd_core.entities import DecisionRecord
+    # Check for potentially conflicting or related decisions
+    related_decisions = []
+    try:
+        from herd_mcp.memory import recall as semantic_recall
 
-            decision_record = DecisionRecord(
-                decision_id=decision_id,
-                decision_type=decision_type,
-                context=context,
-                decision=decision,
-                rationale=rationale,
-                alternatives_considered=alternatives_considered,
-                decided_by=agent_name,
-                ticket_code=ticket_code,
-            )
-            registry.store.save(decision_record)
-            adapter_used = True
-        except Exception:
-            # Fall through to SQL fallback
-            pass
+        related_decisions = semantic_recall(
+            f"{decision_type}: {decision}",
+            limit=3,
+            memory_type="decision_context",
+        )
+    except (ImportError, Exception):
+        pass  # Semantic memory unavailable
 
-    # Fallback to raw SQL if adapter not used
-    if not adapter_used:
-        with connection() as conn:
-            conn.execute(
-                """
-                INSERT INTO herd.decision_record
-                  (decision_id, decision_type, context, decision, rationale,
-                   alternatives_considered, decided_by, ticket_code, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-                """,
-                [
-                    decision_id,
-                    decision_type,
-                    context,
-                    decision,
-                    rationale,
-                    alternatives_considered,
-                    agent_name,
-                    ticket_code,
-                ],
+    # Graph enrichment: decision lineage
+    decision_lineage: list[dict] = []
+    try:
+        from herd_mcp.graph import is_available, query_graph
+
+        if is_available() and ticket_code:
+            # Find decisions that share the same ticket scope
+            lineage = query_graph(
+                "MATCH (t:Ticket {id: $tid})-[:Implements]->(d:Decision) "
+                "RETURN d.id AS id, d.title AS title, d.date AS date",
+                {"tid": ticket_code},
             )
+            decision_lineage = lineage[:10]
+    except ImportError:
+        pass
+    except Exception:
+        logger.warning("Failed to enrich decision with graph lineage", exc_info=True)
+
+    # Build the body combining context, decision, rationale, and alternatives
+    body_parts = [
+        f"**Type**: {decision_type}",
+        f"**Context**: {context}",
+        f"**Decision**: {decision}",
+        f"**Rationale**: {rationale}",
+    ]
+    if alternatives_considered:
+        body_parts.append(f"**Alternatives**: {alternatives_considered}")
+    body = "\n".join(body_parts)
+
+    # Save decision record via store
+    decision_record = DecisionRecord(
+        id=decision_id,
+        title=f"{decision_type}: {decision[:80]}",
+        body=body,
+        decision_maker=agent_name,
+        scope=ticket_code,
+        status="accepted",
+    )
+    async with registry.write_lock:
+        store.save(decision_record)
+
+    # Auto-shadow to LanceDB for semantic recall
+    try:
+        from herd_mcp.memory import store_memory
+
+        summary = f"{decision_type}: {decision}. Rationale: {rationale}"
+        store_memory(
+            project="herd",
+            agent=agent_name,
+            memory_type="decision_context",
+            content=body,
+            summary=summary,
+            session_id=f"{agent_name}-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}",
+            metadata={"ticket_code": ticket_code} if ticket_code else None,
+        )
+    except Exception:
+        logger.warning("Failed to auto-shadow decision to LanceDB", exc_info=True)
+
+    # Auto-shadow to KuzuDB graph
+    try:
+        from herd_mcp.graph import create_edge, merge_node
+
+        merge_node(
+            "Decision",
+            {
+                "id": decision_id,
+                "title": f"{decision_type}: {decision[:80]}",
+                "date": datetime.now(timezone.utc).isoformat(),
+                "status": "accepted",
+                "scope": ticket_code or "",
+                "principle": "",
+            },
+        )
+        merge_node(
+            "Agent",
+            {
+                "id": agent_name,
+                "code": agent_name,
+                "role": agent_name,
+                "status": "active",
+                "team": "",
+                "host": "",
+            },
+        )
+        create_edge("Decides", "Agent", agent_name, "Decision", decision_id)
+
+        if ticket_code:
+            merge_node(
+                "Ticket",
+                {
+                    "id": ticket_code,
+                    "title": "",
+                    "status": "",
+                    "priority": "",
+                },
+            )
+            create_edge("Implements", "Ticket", ticket_code, "Decision", decision_id)
+    except ImportError:
+        pass  # KuzuDB not installed
+    except Exception:
+        logger.warning("Failed to auto-shadow decision to graph", exc_info=True)
 
     # Format decision text for Slack
     decision_text = f"**Type**: {decision_type}\n**Decision**: {decision}\n**Rationale**: {rationale}"
@@ -147,7 +226,7 @@ async def execute(
         decision_text += f"\n**Alternatives**: {alternatives_considered}"
 
     # Post to Slack - use adapter if available
-    if registry and registry.notify:
+    if registry.notify:
         try:
             # Format message with ticket link if available
             if ticket_code:
@@ -173,4 +252,17 @@ async def execute(
         "agent": agent_name,
         "ticket_code": ticket_code,
         "slack_response": slack_result if not slack_result.get("success") else None,
+        "related_decisions": (
+            [
+                {
+                    "content": m["content"],
+                    "created_at": m.get("created_at"),
+                    "agent": m.get("agent"),
+                }
+                for m in related_decisions
+            ]
+            if related_decisions
+            else []
+        ),
+        "decision_lineage": decision_lineage,
     }

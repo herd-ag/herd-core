@@ -2,332 +2,265 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import logging
+from typing import TYPE_CHECKING
 
-from herd_mcp.db import connection
+from herd_core.queries import OperationalQueries
+from herd_core.types import (
+    AgentRecord,
+    AgentState,
+    SprintRecord,
+    TicketEvent,
+    TicketRecord,
+)
 
 if TYPE_CHECKING:
+    from herd_core.adapters.store import StoreAdapter
     from herd_mcp.adapters import AdapterRegistry
 
+logger = logging.getLogger(__name__)
 
-def _get_active_agents(conn: Any) -> list[dict]:
+
+def _get_active_agents(store: StoreAdapter) -> list[dict]:
     """Get all active agents with their current assignments.
 
     Args:
-        conn: DuckDB connection.
+        store: StoreAdapter instance.
 
     Returns:
         List of agent dicts with assignment info.
     """
-    agents = []
-    result = conn.execute("""
-        SELECT agent_code, agent_role, agent_status, default_model_code
-        FROM herd.agent_def
-        WHERE deleted_at IS NULL
-        """).fetchall()
+    agents_list = []
+    # Get all active agent records
+    records = store.list(AgentRecord, active=True)
 
-    for row in result:
-        agent = {
-            "agent_code": row[0],
-            "agent_role": row[1],
-            "agent_status": row[2],
-            "default_model": row[3],
-            "current_assignment": None,
-        }
-
-        # Check for active instance with assignment
-        assignment = conn.execute(
-            """
-            SELECT ai.ticket_code, ai.agent_instance_started_at
-            FROM herd.agent_instance ai
-            WHERE ai.agent_code = ?
-              AND ai.agent_instance_ended_at IS NULL
-            ORDER BY ai.agent_instance_started_at DESC
-            LIMIT 1
-            """,
-            [row[0]],
-        ).fetchone()
-
-        if assignment:
-            agent["current_assignment"] = {
-                "ticket_code": assignment[0],
-                "started_at": str(assignment[1]) if assignment[1] else None,
+    # Group by agent name to show unique agents
+    seen_agents: dict[str, dict] = {}
+    for record in records:
+        agent_name = record.agent
+        if agent_name not in seen_agents:
+            seen_agents[agent_name] = {
+                "agent_code": agent_name,
+                "agent_role": agent_name,
+                "agent_status": record.state.value if record.state else "unknown",
+                "default_model": record.model,
+                "current_assignment": None,
             }
 
-        agents.append(agent)
+        # If this is a running instance with a ticket, set as current assignment
+        if (
+            record.state in (AgentState.RUNNING, AgentState.SPAWNING)
+            and record.ticket_id
+        ):
+            seen_agents[agent_name]["current_assignment"] = {
+                "ticket_code": record.ticket_id,
+                "started_at": str(record.started_at) if record.started_at else None,
+            }
 
-    return agents
+    agents_list = list(seen_agents.values())
+    return agents_list
 
 
-def _get_blocked_tickets(conn: Any) -> list[dict]:
+def _get_blocked_tickets(
+    store: StoreAdapter, queries: OperationalQueries
+) -> list[dict]:
     """Get all currently blocked tickets.
 
     Args:
-        conn: DuckDB connection.
+        store: StoreAdapter instance.
+        queries: OperationalQueries instance.
 
     Returns:
         List of blocked ticket dicts.
     """
+    blocked = queries.blocked_tickets()
     blockers = []
-    result = conn.execute("""
-        WITH blocked_events AS (
-            SELECT
-                ta.ticket_code,
-                ta.blocker_ticket_code,
-                ta.blocker_description,
-                ta.created_at,
-                ROW_NUMBER() OVER (PARTITION BY ta.ticket_code ORDER BY ta.created_at DESC) as rn
-            FROM herd.agent_instance_ticket_activity ta
-            WHERE ta.ticket_event_type = 'blocked'
-        ),
-        unblocked_events AS (
-            SELECT
-                ticket_code,
-                MAX(created_at) as unblocked_at
-            FROM herd.agent_instance_ticket_activity
-            WHERE ticket_event_type = 'unblocked'
-            GROUP BY ticket_code
-        )
-        SELECT
-            be.ticket_code,
-            be.blocker_ticket_code,
-            be.blocker_description,
-            be.created_at
-        FROM blocked_events be
-        LEFT JOIN unblocked_events ue ON be.ticket_code = ue.ticket_code
-        WHERE be.rn = 1
-          AND (ue.unblocked_at IS NULL OR be.created_at > ue.unblocked_at)
-        """).fetchall()
+    for ticket in blocked:
+        # Get the most recent blocked event for this ticket
+        events = store.events(TicketEvent, entity_id=ticket.id)
+        blocked_events = [e for e in events if e.event_type == "blocked"]
 
-    for row in result:
+        blocker_ticket = None
+        blocker_desc = None
+        blocked_since = None
+
+        if blocked_events:
+            latest = blocked_events[-1]  # events ordered ascending
+            blocker_ticket = latest.blocked_by[0] if latest.blocked_by else None
+            blocker_desc = latest.note
+            blocked_since = str(latest.created_at) if latest.created_at else None
+
         blockers.append(
             {
-                "ticket_code": row[0],
-                "blocker_ticket_code": row[1],
-                "blocker_description": row[2],
-                "blocked_since": str(row[3]) if row[3] else None,
+                "ticket_code": ticket.id,
+                "blocker_ticket_code": blocker_ticket,
+                "blocker_description": blocker_desc,
+                "blocked_since": blocked_since,
             }
         )
 
     return blockers
 
 
-def _get_current_sprint(conn: Any) -> dict | None:
+def _get_current_sprint(store: StoreAdapter) -> dict | None:
     """Get current active sprint.
 
     Args:
-        conn: DuckDB connection.
+        store: StoreAdapter instance.
 
     Returns:
         Sprint dict or None if no active sprint.
     """
-    result = conn.execute("""
-        SELECT
-            sprint_code,
-            sprint_title,
-            sprint_goal,
-            sprint_started_at,
-            sprint_planned_end_at
-        FROM herd.sprint_def
-        WHERE sprint_actual_end_at IS NULL
-          AND deleted_at IS NULL
-        ORDER BY sprint_started_at DESC
-        LIMIT 1
-        """).fetchone()
+    sprints = store.list(SprintRecord, active=True, status="active")
+    if not sprints:
+        # Try without status filter
+        sprints = store.list(SprintRecord, active=True)
 
-    if not result:
+    if not sprints:
         return None
 
-    sprint = {
-        "sprint_code": result[0],
-        "sprint_title": result[1],
-        "sprint_goal": result[2],
-        "started_at": str(result[3]) if result[3] else None,
-        "planned_end_at": str(result[4]) if result[4] else None,
+    # Take the most recent sprint
+    sprint = sprints[0]
+
+    sprint_dict = {
+        "sprint_code": sprint.id,
+        "sprint_title": sprint.name,
+        "sprint_goal": sprint.goal,
+        "started_at": str(sprint.started_at) if sprint.started_at else None,
+        "planned_end_at": str(sprint.ended_at) if sprint.ended_at else None,
         "tickets": [],
     }
 
-    # Get tickets in this sprint
-    tickets = conn.execute(
-        """
-        SELECT ticket_code, ticket_title, ticket_current_status
-        FROM herd.ticket_def
-        WHERE current_sprint_code = ?
-          AND deleted_at IS NULL
-        """,
-        [result[0]],
-    ).fetchall()
-
+    # Get tickets - we can list all active tickets as sprint assignment
+    # isn't tracked on TicketRecord in the new types
+    tickets = store.list(TicketRecord, active=True)
     for ticket in tickets:
-        sprint["tickets"].append(
+        sprint_dict["tickets"].append(
             {
-                "ticket_code": ticket[0],
-                "ticket_title": ticket[1],
-                "status": ticket[2],
+                "ticket_code": ticket.id,
+                "ticket_title": ticket.title,
+                "status": ticket.status,
             }
         )
 
-    return sprint
+    return sprint_dict
 
 
-def _get_agent_status(conn: Any, agent_name: str) -> dict:
+def _get_agent_status(store: StoreAdapter, agent_name: str) -> dict:
     """Get status for a specific agent.
 
     Args:
-        conn: DuckDB connection.
+        store: StoreAdapter instance.
         agent_name: Agent code to query.
 
     Returns:
         Agent status dict.
     """
-    # Get agent info
-    agent_info = conn.execute(
-        """
-        SELECT agent_code, agent_role, agent_status, default_model_code
-        FROM herd.agent_def
-        WHERE agent_code = ?
-          AND deleted_at IS NULL
-        """,
-        [agent_name],
-    ).fetchone()
+    # Get all instances for this agent (active and ended)
+    all_instances = store.list(AgentRecord, agent=agent_name)
 
-    if not agent_info:
+    if not all_instances:
         return {"error": f"Agent {agent_name} not found"}
 
-    # Get all instances for this agent
-    instances = conn.execute(
-        """
-        SELECT
-            agent_instance_code,
-            ticket_code,
-            agent_instance_started_at,
-            agent_instance_ended_at,
-            agent_instance_outcome
-        FROM herd.agent_instance
-        WHERE agent_code = ?
-        ORDER BY agent_instance_started_at DESC
-        LIMIT 10
-        """,
-        [agent_name],
-    ).fetchall()
+    # Use the first instance for agent-level info
+    first = all_instances[0]
 
     instance_list = []
-    for inst in instances:
+    for inst in all_instances[:10]:  # Limit to 10 most recent
         instance_list.append(
             {
-                "instance_code": inst[0],
-                "ticket_code": inst[1],
-                "started_at": str(inst[2]) if inst[2] else None,
-                "ended_at": str(inst[3]) if inst[3] else None,
-                "outcome": inst[4],
+                "instance_code": inst.id,
+                "ticket_code": inst.ticket_id,
+                "started_at": str(inst.started_at) if inst.started_at else None,
+                "ended_at": str(inst.ended_at) if inst.ended_at else None,
+                "outcome": inst.state.value if inst.state else None,
             }
         )
 
     return {
-        "agent_code": agent_info[0],
-        "agent_role": agent_info[1],
-        "agent_status": agent_info[2],
-        "default_model": agent_info[3],
+        "agent_code": agent_name,
+        "agent_role": agent_name,
+        "agent_status": first.state.value if first.state else "unknown",
+        "default_model": first.model,
         "recent_instances": instance_list,
     }
 
 
-def _get_ticket_status(conn: Any, ticket_id: str) -> dict:
+def _get_ticket_status(store: StoreAdapter, ticket_id: str) -> dict:
     """Get full lifecycle for a specific ticket.
 
     Args:
-        conn: DuckDB connection.
+        store: StoreAdapter instance.
         ticket_id: Ticket code to query.
 
     Returns:
         Ticket status dict with full activity history.
     """
-    # Get ticket info
-    ticket_info = conn.execute(
-        """
-        SELECT
-            ticket_code,
-            ticket_title,
-            ticket_description,
-            ticket_current_status,
-            current_sprint_code
-        FROM herd.ticket_def
-        WHERE ticket_code = ?
-          AND deleted_at IS NULL
-        """,
-        [ticket_id],
-    ).fetchone()
+    ticket = store.get(TicketRecord, ticket_id)
 
-    if not ticket_info:
+    if not ticket:
         return {"error": f"Ticket {ticket_id} not found"}
 
-    # Get activity history
-    activities = conn.execute(
-        """
-        SELECT
-            agent_instance_code,
-            ticket_event_type,
-            ticket_status,
-            ticket_activity_comment,
-            created_at
-        FROM herd.agent_instance_ticket_activity
-        WHERE ticket_code = ?
-        ORDER BY created_at DESC
-        """,
-        [ticket_id],
-    ).fetchall()
+    # Get activity history from ticket events
+    events = store.events(TicketEvent, entity_id=ticket_id)
 
     activity_list = []
-    for act in activities:
+    for event in reversed(events):  # Most recent first
         activity_list.append(
             {
-                "agent_instance": act[0],
-                "event_type": act[1],
-                "status": act[2],
-                "comment": act[3],
-                "timestamp": str(act[4]) if act[4] else None,
+                "agent_instance": event.instance_id,
+                "event_type": event.event_type,
+                "status": event.new_status,
+                "comment": event.note,
+                "timestamp": str(event.created_at) if event.created_at else None,
             }
         )
 
     return {
-        "ticket_code": ticket_info[0],
-        "ticket_title": ticket_info[1],
-        "ticket_description": ticket_info[2],
-        "current_status": ticket_info[3],
-        "sprint_code": ticket_info[4],
+        "ticket_code": ticket.id,
+        "ticket_title": ticket.title,
+        "ticket_description": ticket.description,
+        "current_status": ticket.status,
+        "sprint_code": None,  # Sprint code not on TicketRecord in new types
         "activity_history": activity_list,
     }
 
 
-def _get_available_agents(conn: Any) -> list[dict]:
+def _get_available_agents(store: StoreAdapter) -> list[dict]:
     """Get agents with no active instance.
 
     Args:
-        conn: DuckDB connection.
+        store: StoreAdapter instance.
 
     Returns:
         List of available agent dicts.
     """
-    result = conn.execute("""
-        SELECT ad.agent_code, ad.agent_role, ad.agent_status
-        FROM herd.agent_def ad
-        WHERE ad.deleted_at IS NULL
-          AND ad.agent_code NOT IN (
-              SELECT DISTINCT agent_code
-              FROM herd.agent_instance
-              WHERE agent_instance_ended_at IS NULL
-          )
-        """).fetchall()
+    # Get all active agent instances
+    active_instances = store.list(AgentRecord, active=True)
+
+    # Collect agent names that have running instances
+    busy_agents = set()
+    all_agent_names = set()
+    for inst in active_instances:
+        all_agent_names.add(inst.agent)
+        if inst.state in (AgentState.RUNNING, AgentState.SPAWNING):
+            busy_agents.add(inst.agent)
+
+    # Also get all agents (including ended) to know the full roster
+    all_instances = store.list(AgentRecord)
+    for inst in all_instances:
+        all_agent_names.add(inst.agent)
 
     available = []
-    for row in result:
-        available.append(
-            {
-                "agent_code": row[0],
-                "agent_role": row[1],
-                "agent_status": row[2],
-            }
-        )
+    for agent_name in all_agent_names:
+        if agent_name not in busy_agents:
+            available.append(
+                {
+                    "agent_code": agent_name,
+                    "agent_role": agent_name,
+                    "agent_status": "available",
+                }
+            )
 
     return available
 
@@ -346,56 +279,107 @@ async def execute(
     Returns:
         Dict with agents status, sprint info, and blocker list based on scope.
     """
-    # NOTE: Complex aggregate queries (JOINs, GROUP BY, subqueries) in status.py
-    # are kept as raw SQL. StoreAdapter's generic CRUD interface doesn't cover
-    # these analytics queries. Future: ReportingAdapter or store.raw_query().
-    with connection() as conn:
-        if scope == "all":
-            return {
-                "scope": scope,
-                "agents": _get_active_agents(conn),
-                "sprint": _get_current_sprint(conn),
-                "blockers": _get_blocked_tickets(conn),
-                "requesting_agent": agent_name,
-            }
-        elif scope == "sprint":
-            return {
-                "scope": scope,
-                "sprint": _get_current_sprint(conn),
-                "requesting_agent": agent_name,
-            }
-        elif scope.startswith("agent:"):
-            target_agent = scope.split(":", 1)[1]
-            return {
-                "scope": scope,
-                "agent_status": _get_agent_status(conn, target_agent),
-                "requesting_agent": agent_name,
-            }
-        elif scope.startswith("ticket:"):
-            ticket_id = scope.split(":", 1)[1]
-            return {
-                "scope": scope,
-                "ticket_status": _get_ticket_status(conn, ticket_id),
-                "requesting_agent": agent_name,
-            }
-        elif scope == "available":
-            return {
-                "scope": scope,
-                "available_agents": _get_available_agents(conn),
-                "requesting_agent": agent_name,
-            }
-        elif scope == "blocked":
-            return {
-                "scope": scope,
-                "blockers": _get_blocked_tickets(conn),
-                "requesting_agent": agent_name,
-            }
-        else:
-            # Default to "all" for unknown scopes
-            return {
-                "scope": "all",
-                "agents": _get_active_agents(conn),
-                "sprint": _get_current_sprint(conn),
-                "blockers": _get_blocked_tickets(conn),
-                "requesting_agent": agent_name,
-            }
+    if not registry or not registry.store:
+        return {"error": "StoreAdapter not configured"}
+
+    store = registry.store
+    queries = OperationalQueries(store)
+
+    if scope == "all":
+        # Graph enrichment: topology summary
+        topology: dict = {}
+        try:
+            from herd_mcp.graph import is_available, query_graph
+
+            if is_available():
+                # Count nodes by type
+                node_counts = query_graph(
+                    "MATCH (n) RETURN labels(n)[0] AS label, count(n) AS cnt"
+                )
+                # Orphan decisions (not linked to any ticket via Implements)
+                orphan_decisions = query_graph(
+                    "MATCH (d:Decision) WHERE NOT EXISTS { "
+                    "MATCH (t:Ticket)-[:Implements]->(d) } "
+                    "RETURN d.id AS id, d.title AS title"
+                )
+                topology = {
+                    "node_counts": {r["label"]: r["cnt"] for r in node_counts},
+                    "orphan_decisions": orphan_decisions[:10],
+                }
+        except ImportError:
+            pass
+        except Exception:
+            logger.warning("Failed to enrich status with graph topology", exc_info=True)
+
+        return {
+            "scope": scope,
+            "agents": _get_active_agents(store),
+            "sprint": _get_current_sprint(store),
+            "blockers": _get_blocked_tickets(store, queries),
+            "graph_topology": topology,
+            "requesting_agent": agent_name,
+        }
+    elif scope == "sprint":
+        return {
+            "scope": scope,
+            "sprint": _get_current_sprint(store),
+            "requesting_agent": agent_name,
+        }
+    elif scope.startswith("agent:"):
+        target_agent = scope.split(":", 1)[1]
+        return {
+            "scope": scope,
+            "agent_status": _get_agent_status(store, target_agent),
+            "requesting_agent": agent_name,
+        }
+    elif scope.startswith("ticket:"):
+        ticket_id = scope.split(":", 1)[1]
+        return {
+            "scope": scope,
+            "ticket_status": _get_ticket_status(store, ticket_id),
+            "requesting_agent": agent_name,
+        }
+    elif scope == "available":
+        return {
+            "scope": scope,
+            "available_agents": _get_available_agents(store),
+            "requesting_agent": agent_name,
+        }
+    elif scope == "blocked":
+        return {
+            "scope": scope,
+            "blockers": _get_blocked_tickets(store, queries),
+            "requesting_agent": agent_name,
+        }
+    else:
+        # Default to "all" for unknown scopes — graph topology included
+        default_topology: dict = {}
+        try:
+            from herd_mcp.graph import is_available, query_graph
+
+            if is_available():
+                node_counts = query_graph(
+                    "MATCH (n) RETURN labels(n)[0] AS label, count(n) AS cnt"
+                )
+                orphan_decisions = query_graph(
+                    "MATCH (d:Decision) WHERE NOT EXISTS { "
+                    "MATCH (t:Ticket)-[:Implements]->(d) } "
+                    "RETURN d.id AS id, d.title AS title"
+                )
+                default_topology = {
+                    "node_counts": {r["label"]: r["cnt"] for r in node_counts},
+                    "orphan_decisions": orphan_decisions[:10],
+                }
+        except ImportError:
+            pass
+        except Exception:
+            logger.warning("Failed to enrich status with graph topology", exc_info=True)
+
+        return {
+            "scope": "all",
+            "agents": _get_active_agents(store),
+            "sprint": _get_current_sprint(store),
+            "blockers": _get_blocked_tickets(store, queries),
+            "graph_topology": default_topology,
+            "requesting_agent": agent_name,
+        }

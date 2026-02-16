@@ -4,15 +4,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import re
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from herd_mcp.db import connection
+from herd_core.types import AgentRecord, AgentState, LifecycleEvent
 
 if TYPE_CHECKING:
     from herd_mcp.adapters import AdapterRegistry
+
+logger = logging.getLogger(__name__)
 
 
 def _classify_event_type(message: str) -> str:
@@ -91,9 +94,9 @@ def _post_to_slack(message: str, channel: str, agent_name: str) -> dict[str, Any
     Returns:
         Dict with success status and response data.
     """
-    token = os.getenv("HERD_SLACK_TOKEN")
+    token = os.getenv("HERD_NOTIFY_SLACK_TOKEN")
     if not token:
-        return {"success": False, "error": "HERD_SLACK_TOKEN not set"}
+        return {"success": False, "error": "HERD_NOTIFY_SLACK_TOKEN not set"}
 
     try:
         import urllib.request
@@ -156,61 +159,53 @@ async def execute(
     # Resolve agent identity and get current instance
     agent_instance_code = None
 
-    # Adapter path (for simple CRUD operations)
-    if registry and registry.store:
-        try:
-            from herd_core.entities import AgentRecord, LifecycleEvent
+    if not registry or not registry.store:
+        return {"error": "StoreAdapter not configured"}
 
-            # List active instances for this agent
-            instances = registry.store.list(
-                AgentRecord, agent_code=agent_name, ended_at=None
-            )
+    store = registry.store
 
-            if instances:
-                agent_instance_code = instances[0].instance_code
+    # Find active instance for this agent
+    instances = store.list(AgentRecord, agent=agent_name, active=True)
+    for inst in instances:
+        if inst.state in (AgentState.RUNNING, AgentState.SPAWNING):
+            agent_instance_code = inst.id
+            break
 
-                # Append lifecycle event
-                lifecycle_event = LifecycleEvent(
-                    agent_instance_code=agent_instance_code,
+    # Append lifecycle event
+    if agent_instance_code:
+        async with registry.write_lock:
+            store.append(
+                LifecycleEvent(
+                    entity_id=agent_instance_code,
                     event_type=event_type,
+                    instance_id=agent_instance_code,
                     detail=message,
                 )
-                registry.store.append(lifecycle_event)
+            )
+
+    # Auto-shadow to KuzuDB graph (only for pr_submitted events)
+    if event_type == "pr_submitted":
+        try:
+            from herd_mcp.graph import merge_node
+
+            merge_node(
+                "Agent",
+                {
+                    "id": agent_name,
+                    "code": agent_name,
+                    "role": agent_name,
+                    "status": "active",
+                    "team": "",
+                    "host": "",
+                },
+            )
+        except ImportError:
+            pass  # KuzuDB not installed
         except Exception:
-            # Fall through to SQL fallback
-            pass
-
-    # Fallback to raw SQL if adapter not available or failed
-    if agent_instance_code is None:
-        with connection() as conn:
-            # Look up current agent instance
-            result = conn.execute(
-                """
-                SELECT ai.agent_instance_code
-                FROM herd.agent_instance ai
-                WHERE ai.agent_code = ?
-                  AND ai.agent_instance_ended_at IS NULL
-                ORDER BY ai.agent_instance_started_at DESC
-                LIMIT 1
-                """,
-                [agent_name],
-            ).fetchone()
-
-            if result:
-                agent_instance_code = result[0]
-
-                # Record to lifecycle activity
-                conn.execute(
-                    """
-                    INSERT INTO herd.agent_instance_lifecycle_activity
-                      (agent_instance_code, lifecycle_event_type, lifecycle_detail, created_at)
-                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-                    """,
-                    [agent_instance_code, event_type, message],
-                )
+            logger.warning("Failed to auto-shadow log to graph", exc_info=True)
 
     # Post to Slack - use adapter if available, otherwise fall back to inline
-    if registry and registry.notify:
+    if registry.notify:
         # Use adapter protocol
         try:
             post_result = registry.notify.post(
@@ -234,7 +229,7 @@ async def execute(
         slack_response = slack_result.get("response", {})
         thread_ts = slack_response.get("ts")
         channel_id = slack_response.get("channel")
-        token = os.getenv("HERD_SLACK_TOKEN")
+        token = os.getenv("HERD_NOTIFY_SLACK_TOKEN")
 
         if thread_ts and channel_id and token:
             # Poll for replies (24 iterations * 5 seconds = 120 seconds)
@@ -242,7 +237,7 @@ async def execute(
                 await asyncio.sleep(5)
 
                 # Use adapter if available
-                if registry and registry.notify:
+                if registry.notify:
                     try:
                         replies = registry.notify.get_thread_replies(
                             channel=channel_id,
