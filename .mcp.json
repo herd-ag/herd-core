@@ -1,6 +1,7 @@
 {
   "mcpServers": {
     "herd": {
+      "type": "http",
       "url": "http://localhost:8420/mcp"
     }
   }

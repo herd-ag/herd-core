@@ -105,6 +105,16 @@ async def execute(
     store = registry.store
     decision_id = str(uuid.uuid4())
 
+    # Auto-assign HDR number
+    hdr_number = None
+    try:
+        from herd_mcp.memory import next_hdr_number
+
+        hdr_number = next_hdr_number()
+    except Exception:
+        logger.warning("Failed to auto-assign HDR number", exc_info=True)
+        # Continue without HDR number rather than failing
+
     # Check for potentially conflicting or related decisions
     related_decisions = []
     try:
@@ -145,6 +155,8 @@ async def execute(
     ]
     if alternatives_considered:
         body_parts.append(f"**Alternatives**: {alternatives_considered}")
+    if hdr_number:
+        body_parts.insert(0, f"**HDR**: {hdr_number}")
     body = "\n".join(body_parts)
 
     # Save decision record via store
@@ -164,6 +176,10 @@ async def execute(
         from herd_mcp.memory import store_memory
 
         summary = f"{decision_type}: {decision}. Rationale: {rationale}"
+        metadata = {"ticket_code": ticket_code} if ticket_code else {}
+        if hdr_number:
+            metadata["hdr_number"] = hdr_number
+
         store_memory(
             project="herd",
             agent=agent_name,
@@ -171,7 +187,7 @@ async def execute(
             content=body,
             summary=summary,
             session_id=f"{agent_name}-{datetime.now(timezone.utc).strftime('%Y-%m-%d')}",
-            metadata={"ticket_code": ticket_code} if ticket_code else None,
+            metadata=metadata,
         )
     except Exception:
         logger.warning("Failed to auto-shadow decision to LanceDB", exc_info=True)
@@ -222,6 +238,8 @@ async def execute(
 
     # Format decision text for Slack
     decision_text = f"**Type**: {decision_type}\n**Decision**: {decision}\n**Rationale**: {rationale}"
+    if hdr_number:
+        decision_text = f"**HDR**: {hdr_number}\n{decision_text}"
     if alternatives_considered:
         decision_text += f"\n**Alternatives**: {alternatives_considered}"
 
@@ -248,6 +266,7 @@ async def execute(
     return {
         "success": True,
         "decision_id": decision_id,
+        "hdr_number": hdr_number,
         "posted_to_slack": slack_result.get("success", False),
         "agent": agent_name,
         "ticket_code": ticket_code,

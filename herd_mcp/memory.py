@@ -16,9 +16,17 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-# Valid memory types per HDR-0033
+# Valid memory types per HDR-0033, HDR-0042, HDR-0043
 MEMORY_TYPES = frozenset(
-    {"session_summary", "decision_context", "pattern", "preference", "thread"}
+    {
+        "session_summary",
+        "decision_context",
+        "pattern",
+        "preference",
+        "thread",
+        "lesson",
+        "observation",
+    }
 )
 
 # Embedding model config
@@ -258,12 +266,67 @@ def store_memory(
     return memory_id
 
 
+def next_hdr_number() -> str:
+    """Query LanceDB for the maximum HDR number and return the next in sequence.
+
+    Scans all decision_context memories for hdr_number metadata fields,
+    finds the maximum number, and returns the next sequential HDR number.
+
+    Returns:
+        Next HDR number in format "HDR-NNNN" (e.g., "HDR-0041").
+        Returns "HDR-0001" if no HDRs exist yet.
+
+    Raises:
+        ImportError: If lancedb is not installed.
+    """
+    try:
+        db = get_memory_store()
+        table = ensure_memories_table(db)
+
+        # Query all decision_context memories
+        all_decisions = (
+            table.search([0.0] * _EMBEDDING_DIMENSION)
+            .where("memory_type = 'decision_context'")
+            .limit(10000)
+            .to_list()
+        )
+
+        max_number = 0
+        for row in all_decisions:
+            metadata_str = row.get("metadata", "{}")
+            if metadata_str:
+                try:
+                    metadata = json.loads(metadata_str)
+                    hdr_number = metadata.get("hdr_number", "")
+                    if hdr_number and hdr_number.startswith("HDR-"):
+                        # Parse the numeric part
+                        number_part = hdr_number[4:]
+                        try:
+                            num = int(number_part)
+                            if num > max_number:
+                                max_number = num
+                        except ValueError:
+                            # Malformed HDR number, skip
+                            continue
+                except (json.JSONDecodeError, TypeError):
+                    # Skip invalid metadata
+                    continue
+
+        # Return next number in sequence
+        next_num = max_number + 1
+        return f"HDR-{next_num:04d}"
+
+    except ImportError:
+        logger.warning("LanceDB not available for HDR numbering")
+        raise
+
+
 def recall(
     query: str,
     limit: int = 5,
     **filters: Any,
 ) -> list[dict[str, Any]]:
-    """Search semantic memory for relevant context.
+    """Search semantic memory for relevant cross-session context.
 
     Embeds the query and performs vector similarity search against the
     memories table, with optional metadata filters applied as WHERE
