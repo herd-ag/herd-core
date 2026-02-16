@@ -2,313 +2,267 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+import asyncio
 
 import pytest
+from herd_core.types import (
+    AgentRecord,
+    AgentState,
+    LifecycleEvent,
+)
+from herd_mcp.adapters import AdapterRegistry
 from herd_mcp.tools import lifecycle
 
 
 @pytest.fixture
-def seeded_db(in_memory_db):
-    """Provide a database with test data for lifecycle tool."""
-    conn = in_memory_db
+def mock_registry(mock_store):
+    """Provide an AdapterRegistry with MockStore."""
+    return AdapterRegistry(store=mock_store, write_lock=asyncio.Lock())
 
-    # Insert test agents
-    conn.execute("""
-        INSERT INTO herd.agent_def
-          (agent_code, agent_role, agent_status, created_at)
-        VALUES
-          ('mason', 'backend', 'active', CURRENT_TIMESTAMP),
-          ('fresco', 'frontend', 'active', CURRENT_TIMESTAMP),
-          ('old-agent', 'backend', 'decommissioned', CURRENT_TIMESTAMP)
-        """)
 
-    # Insert active agent instances
-    conn.execute("""
-        INSERT INTO herd.agent_instance
-          (agent_instance_code, agent_code, model_code, agent_instance_started_at)
-        VALUES
-          ('inst-mason-001', 'mason', 'claude-sonnet-4', CURRENT_TIMESTAMP),
-          ('inst-mason-002', 'mason', 'claude-sonnet-4', CURRENT_TIMESTAMP),
-          ('inst-fresco-001', 'fresco', 'claude-opus-4', CURRENT_TIMESTAMP)
-        """)
+@pytest.fixture
+def seeded_store(mock_store):
+    """Provide a mock store seeded with test data for lifecycle tool."""
+    # Insert active agent instances for mason (2 instances)
+    mock_store.save(
+        AgentRecord(
+            id="inst-mason-001",
+            agent="mason",
+            model="claude-sonnet-4",
+            state=AgentState.RUNNING,
+        )
+    )
+    mock_store.save(
+        AgentRecord(
+            id="inst-mason-002",
+            agent="mason",
+            model="claude-sonnet-4",
+            state=AgentState.RUNNING,
+        )
+    )
 
-    yield conn
+    # Insert active agent instance for fresco (1 instance)
+    mock_store.save(
+        AgentRecord(
+            id="inst-fresco-001",
+            agent="fresco",
+            model="claude-opus-4",
+            state=AgentState.RUNNING,
+        )
+    )
+
+    return mock_store
 
 
 @pytest.mark.asyncio
-async def test_decommission_agent(seeded_db):
+async def test_decommission_agent(seeded_store, mock_registry):
     """Test decommissioning an agent."""
-    with patch("herd_mcp.tools.lifecycle.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await lifecycle.decommission(
+        agent_name="mason",
+        current_agent="steve",
+        registry=mock_registry,
+    )
 
-        result = await lifecycle.decommission(
-            agent_name="mason",
-            current_agent="steve",
-        )
+    assert result["success"] is True
+    assert result["target_agent"] == "mason"
+    assert result["previous_status"] == "running"
+    assert result["new_status"] == "decommissioned"
+    assert result["instances_ended"] == 2  # Two active instances
+    assert result["requested_by"] == "steve"
 
-        assert result["success"] is True
-        assert result["target_agent"] == "mason"
-        assert result["previous_status"] == "active"
-        assert result["new_status"] == "decommissioned"
-        assert result["instances_ended"] == 2  # Two active instances
-        assert result["requested_by"] == "steve"
+    # Verify instances were updated to STOPPED
+    inst1 = seeded_store.get(AgentRecord, "inst-mason-001")
+    assert inst1.state == AgentState.STOPPED
+    assert inst1.ended_at is not None
 
-    # Verify agent_def was updated
-    agent_status = seeded_db.execute(
-        "SELECT agent_status FROM herd.agent_def WHERE agent_code = 'mason'"
-    ).fetchone()[0]
-    assert agent_status == "decommissioned"
-
-    # Verify instances were ended
-    ended_count = seeded_db.execute("""
-        SELECT COUNT(*)
-        FROM herd.agent_instance
-        WHERE agent_code = 'mason'
-          AND agent_instance_ended_at IS NOT NULL
-          AND agent_instance_outcome = 'decommissioned'
-        """).fetchone()[0]
-    assert ended_count == 2
+    inst2 = seeded_store.get(AgentRecord, "inst-mason-002")
+    assert inst2.state == AgentState.STOPPED
+    assert inst2.ended_at is not None
 
     # Verify lifecycle activity was recorded
-    activity_count = seeded_db.execute("""
-        SELECT COUNT(*)
-        FROM herd.agent_instance_lifecycle_activity
-        WHERE lifecycle_event_type = 'decommissioned'
-        """).fetchone()[0]
-    assert activity_count == 2
+    all_events = seeded_store.events(LifecycleEvent)
+    events = [e for e in all_events if e.event_type == "decommissioned"]
+    assert len(events) == 2
 
 
 @pytest.mark.asyncio
-async def test_decommission_nonexistent_agent(seeded_db):
+async def test_decommission_nonexistent_agent(seeded_store, mock_registry):
     """Test decommissioning a nonexistent agent."""
-    with patch("herd_mcp.tools.lifecycle.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await lifecycle.decommission(
+        agent_name="nonexistent",
+        current_agent="steve",
+        registry=mock_registry,
+    )
 
-        result = await lifecycle.decommission(
-            agent_name="nonexistent",
-            current_agent="steve",
-        )
-
-        assert result["success"] is False
-        assert "error" in result
-        assert "not found" in result["error"]
+    assert result["success"] is False
+    assert "error" in result
+    assert "not found" in result["error"]
 
 
 @pytest.mark.asyncio
-async def test_decommission_without_current_agent(seeded_db):
+async def test_decommission_without_current_agent(seeded_store, mock_registry):
     """Test decommissioning without specifying current agent (system)."""
-    with patch("herd_mcp.tools.lifecycle.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await lifecycle.decommission(
+        agent_name="fresco",
+        current_agent=None,
+        registry=mock_registry,
+    )
 
-        result = await lifecycle.decommission(
-            agent_name="fresco",
-            current_agent=None,
-        )
-
-        assert result["success"] is True
-        assert result["requested_by"] is None
+    assert result["success"] is True
+    assert result["requested_by"] is None
 
     # Verify lifecycle detail mentions "system"
-    activity = seeded_db.execute("""
-        SELECT lifecycle_detail
-        FROM herd.agent_instance_lifecycle_activity
-        WHERE lifecycle_event_type = 'decommissioned'
-        LIMIT 1
-        """).fetchone()
-    assert "system" in activity[0]
+    all_events = seeded_store.events(LifecycleEvent)
+    events = [e for e in all_events if e.event_type == "decommissioned"]
+    assert len(events) >= 1
+    assert "system" in events[0].detail
 
 
 @pytest.mark.asyncio
-async def test_decommission_already_decommissioned(seeded_db):
-    """Test decommissioning an already decommissioned agent."""
-    with patch("herd_mcp.tools.lifecycle.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+async def test_decommission_already_stopped_agent(seeded_store, mock_registry):
+    """Test decommissioning an agent whose instances are already stopped.
 
-        result = await lifecycle.decommission(
-            agent_name="old-agent",
-            current_agent="steve",
+    A stopped but not soft-deleted agent is still found by the store's
+    active=True filter (which only checks deleted_at). The lifecycle tool
+    will process it, recording the previous state as 'stopped'.
+    """
+    # Add a stopped instance for old-agent (deleted_at is None, so still "active" in store)
+    seeded_store.save(
+        AgentRecord(
+            id="inst-old-001",
+            agent="old-agent",
+            model="claude-sonnet-4",
+            state=AgentState.STOPPED,
         )
+    )
 
-        # Should succeed but show previous status was decommissioned
-        assert result["success"] is True
-        assert result["previous_status"] == "decommissioned"
-        assert result["new_status"] == "decommissioned"
+    result = await lifecycle.decommission(
+        agent_name="old-agent",
+        current_agent="steve",
+        registry=mock_registry,
+    )
+
+    # The tool finds the instance and processes it
+    assert result["success"] is True
+    assert result["previous_status"] == "stopped"
+    assert result["new_status"] == "decommissioned"
 
 
 @pytest.mark.asyncio
-async def test_standdown_agent(seeded_db):
+async def test_standdown_agent(seeded_store, mock_registry):
     """Test standing down an agent."""
-    with patch("herd_mcp.tools.lifecycle.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await lifecycle.standdown(
+        agent_name="mason",
+        current_agent="steve",
+        registry=mock_registry,
+    )
 
-        result = await lifecycle.standdown(
-            agent_name="mason",
-            current_agent="steve",
-        )
+    assert result["success"] is True
+    assert result["target_agent"] == "mason"
+    assert result["previous_status"] == "running"
+    assert result["new_status"] == "standby"
+    assert result["instances_ended"] == 2
+    assert result["requested_by"] == "steve"
 
-        assert result["success"] is True
-        assert result["target_agent"] == "mason"
-        assert result["previous_status"] == "active"
-        assert result["new_status"] == "standby"
-        assert result["instances_ended"] == 2
-        assert result["requested_by"] == "steve"
-
-    # Verify agent_def was updated to standby
-    agent_status = seeded_db.execute(
-        "SELECT agent_status FROM herd.agent_def WHERE agent_code = 'mason'"
-    ).fetchone()[0]
-    assert agent_status == "standby"
-
-    # Verify instances were ended with standdown outcome
-    ended_count = seeded_db.execute("""
-        SELECT COUNT(*)
-        FROM herd.agent_instance
-        WHERE agent_code = 'mason'
-          AND agent_instance_ended_at IS NOT NULL
-          AND agent_instance_outcome = 'standdown'
-        """).fetchone()[0]
-    assert ended_count == 2
+    # Verify instances were updated to STOPPED
+    inst1 = seeded_store.get(AgentRecord, "inst-mason-001")
+    assert inst1.state == AgentState.STOPPED
+    assert inst1.ended_at is not None
 
     # Verify lifecycle activity was recorded
-    activity_count = seeded_db.execute("""
-        SELECT COUNT(*)
-        FROM herd.agent_instance_lifecycle_activity
-        WHERE lifecycle_event_type = 'standdown'
-        """).fetchone()[0]
-    assert activity_count == 2
+    all_events = seeded_store.events(LifecycleEvent)
+    events = [e for e in all_events if e.event_type == "standdown"]
+    assert len(events) == 2
 
 
 @pytest.mark.asyncio
-async def test_standdown_nonexistent_agent(seeded_db):
+async def test_standdown_nonexistent_agent(seeded_store, mock_registry):
     """Test standing down a nonexistent agent."""
-    with patch("herd_mcp.tools.lifecycle.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await lifecycle.standdown(
+        agent_name="nonexistent",
+        current_agent="steve",
+        registry=mock_registry,
+    )
 
-        result = await lifecycle.standdown(
-            agent_name="nonexistent",
-            current_agent="steve",
-        )
-
-        assert result["success"] is False
-        assert "error" in result
-        assert "not found" in result["error"]
+    assert result["success"] is False
+    assert "error" in result
+    assert "not found" in result["error"]
 
 
 @pytest.mark.asyncio
-async def test_standdown_without_current_agent(seeded_db):
+async def test_standdown_without_current_agent(seeded_store, mock_registry):
     """Test standing down without specifying current agent (system)."""
-    with patch("herd_mcp.tools.lifecycle.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await lifecycle.standdown(
+        agent_name="fresco",
+        current_agent=None,
+        registry=mock_registry,
+    )
 
-        result = await lifecycle.standdown(
-            agent_name="fresco",
-            current_agent=None,
-        )
-
-        assert result["success"] is True
-        assert result["requested_by"] is None
+    assert result["success"] is True
+    assert result["requested_by"] is None
 
     # Verify lifecycle detail mentions "system"
-    activity = seeded_db.execute("""
-        SELECT lifecycle_detail
-        FROM herd.agent_instance_lifecycle_activity
-        WHERE lifecycle_event_type = 'standdown'
-        LIMIT 1
-        """).fetchone()
-    assert "system" in activity[0]
+    all_events = seeded_store.events(LifecycleEvent)
+    events = [e for e in all_events if e.event_type == "standdown"]
+    assert len(events) >= 1
+    assert "system" in events[0].detail
 
 
 @pytest.mark.asyncio
-async def test_standdown_agent_no_active_instances(seeded_db):
+async def test_standdown_agent_no_active_instances(seeded_store, mock_registry):
     """Test standing down an agent with no active instances."""
-    # Create an agent with no active instances
-    seeded_db.execute("""
-        INSERT INTO herd.agent_def
-          (agent_code, agent_role, agent_status, created_at)
-        VALUES ('inactive-agent', 'backend', 'active', CURRENT_TIMESTAMP)
-        """)
+    result = await lifecycle.standdown(
+        agent_name="inactive-agent",
+        current_agent="steve",
+        registry=mock_registry,
+    )
 
-    with patch("herd_mcp.tools.lifecycle.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
-
-        result = await lifecycle.standdown(
-            agent_name="inactive-agent",
-            current_agent="steve",
-        )
-
-        assert result["success"] is True
-        assert result["instances_ended"] == 0  # No instances to end
+    # No active instances, returns not found
+    assert result["success"] is False
+    assert "not found" in result["error"]
 
 
 @pytest.mark.asyncio
-async def test_decommission_agent_no_active_instances(seeded_db):
+async def test_decommission_agent_no_active_instances(seeded_store, mock_registry):
     """Test decommissioning an agent with no active instances."""
-    # Create an agent with no active instances
-    seeded_db.execute("""
-        INSERT INTO herd.agent_def
-          (agent_code, agent_role, agent_status, created_at)
-        VALUES ('inactive-agent2', 'backend', 'active', CURRENT_TIMESTAMP)
-        """)
+    result = await lifecycle.decommission(
+        agent_name="inactive-agent2",
+        current_agent="steve",
+        registry=mock_registry,
+    )
 
-    with patch("herd_mcp.tools.lifecycle.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
-
-        result = await lifecycle.decommission(
-            agent_name="inactive-agent2",
-            current_agent="steve",
-        )
-
-        assert result["success"] is True
-        assert result["instances_ended"] == 0
+    # No active instances, returns not found
+    assert result["success"] is False
+    assert "not found" in result["error"]
 
 
 @pytest.mark.asyncio
-async def test_decommission_updates_modified_at(seeded_db):
+async def test_decommission_updates_modified_at(seeded_store, mock_registry):
     """Test that decommission updates modified_at timestamp."""
-    with patch("herd_mcp.tools.lifecycle.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await lifecycle.decommission(
+        agent_name="mason",
+        current_agent="steve",
+        registry=mock_registry,
+    )
 
-        result = await lifecycle.decommission(
-            agent_name="mason",
-            current_agent="steve",
-        )
+    assert result["success"] is True
 
-        assert result["success"] is True
-
-    # Verify modified_at was set
-    modified_at = seeded_db.execute(
-        "SELECT modified_at FROM herd.agent_def WHERE agent_code = 'mason'"
-    ).fetchone()[0]
-    assert modified_at is not None
+    # Verify modified_at was set (MockStore.save sets modified_at)
+    inst = seeded_store.get(AgentRecord, "inst-mason-001")
+    assert inst.modified_at is not None
 
 
 @pytest.mark.asyncio
-async def test_standdown_updates_modified_at(seeded_db):
+async def test_standdown_updates_modified_at(seeded_store, mock_registry):
     """Test that standdown updates modified_at timestamp."""
-    with patch("herd_mcp.tools.lifecycle.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await lifecycle.standdown(
+        agent_name="fresco",
+        current_agent="steve",
+        registry=mock_registry,
+    )
 
-        result = await lifecycle.standdown(
-            agent_name="fresco",
-            current_agent="steve",
-        )
-
-        assert result["success"] is True
+    assert result["success"] is True
 
     # Verify modified_at was set
-    modified_at = seeded_db.execute(
-        "SELECT modified_at FROM herd.agent_def WHERE agent_code = 'fresco'"
-    ).fetchone()[0]
-    assert modified_at is not None
+    inst = seeded_store.get(AgentRecord, "inst-fresco-001")
+    assert inst.modified_at is not None

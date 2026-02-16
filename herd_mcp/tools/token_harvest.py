@@ -8,12 +8,14 @@ from __future__ import annotations
 
 import json
 import os
+from decimal import Decimal
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from herd_mcp.db import connection
+from herd_core.types import ModelRecord, TokenEvent
 
 if TYPE_CHECKING:
+    from herd_core.adapters.store import StoreAdapter
     from herd_mcp.adapters import AdapterRegistry
 
 
@@ -118,70 +120,46 @@ def _aggregate_usage_by_model(
 
 
 def _calculate_cost(
+    store: StoreAdapter,
     model_code: str,
     input_tokens: int,
     output_tokens: int,
-    cache_read_tokens: int,
-    cache_create_tokens: int,
-) -> float:
-    """Calculate total cost for token usage.
+) -> Decimal:
+    """Calculate total cost for token usage using store for model pricing.
 
     Args:
+        store: StoreAdapter instance for model pricing lookup.
         model_code: Model identifier.
         input_tokens: Input token count.
         output_tokens: Output token count.
-        cache_read_tokens: Cache read token count.
-        cache_create_tokens: Cache creation token count.
 
     Returns:
-        Total cost in USD.
+        Total cost in USD as Decimal.
     """
-    with connection() as conn:
-        result = conn.execute(
-            """
-            SELECT
-                model_input_cost_per_m,
-                model_output_cost_per_m,
-                model_cache_read_cost_per_m,
-                model_cache_create_cost_per_m
-            FROM herd.model_def
-            WHERE model_code = ?
-            LIMIT 1
-            """,
-            [model_code],
-        ).fetchone()
+    model_record = store.get(ModelRecord, model_code)
 
-        if not result:
-            # Default to zero if model not found
-            return 0.0
+    if not model_record:
+        # Default to zero if model not found
+        return Decimal("0")
 
-        (
-            input_cost_per_m,
-            output_cost_per_m,
-            cache_read_cost_per_m,
-            cache_create_cost_per_m,
-        ) = result
-
-    # Calculate cost (per million tokens)
-    total_cost = 0.0
-    if input_cost_per_m:
-        total_cost += (input_tokens / 1_000_000) * float(input_cost_per_m)
-    if output_cost_per_m:
-        total_cost += (output_tokens / 1_000_000) * float(output_cost_per_m)
-    if cache_read_cost_per_m:
-        total_cost += (cache_read_tokens / 1_000_000) * float(cache_read_cost_per_m)
-    if cache_create_cost_per_m:
-        total_cost += (cache_create_tokens / 1_000_000) * float(cache_create_cost_per_m)
+    total_cost = Decimal("0")
+    if model_record.input_cost_per_token:
+        total_cost += Decimal(str(input_tokens)) * model_record.input_cost_per_token
+    if model_record.output_cost_per_token:
+        total_cost += Decimal(str(output_tokens)) * model_record.output_cost_per_token
 
     return total_cost
 
 
 def _write_token_activity(
-    agent_instance_code: str, usage_data: dict[str, dict[str, int]]
+    store: StoreAdapter,
+    agent_instance_code: str,
+    usage_data: dict[str, dict[str, int]],
 ) -> int:
-    """Write token activity records to the database.
+    """Write token activity records to the store via TokenEvent append.
 
     Args:
+        store: StoreAdapter instance.
         agent_instance_code: Agent instance identifier.
         usage_data: Dict mapping model_code to token counts.
 
@@ -190,38 +168,29 @@ def _write_token_activity(
     """
     records_written = 0
 
-    with connection() as conn:
-        for model_code, counts in usage_data.items():
-            # Calculate cost
-            cost = _calculate_cost(
-                model_code,
-                counts["input_tokens"],
-                counts["output_tokens"],
-                counts["cache_read_tokens"],
-                counts["cache_create_tokens"],
-            )
+    for model_code, counts in usage_data.items():
+        input_tokens = counts["input_tokens"]
+        output_tokens = counts["output_tokens"]
+        total_tokens = input_tokens + output_tokens
 
-            # Insert activity record
-            conn.execute(
-                """
-                INSERT INTO herd.agent_instance_token_activity
-                  (agent_instance_code, model_code, token_input_count, token_output_count,
-                   token_cache_read_count, token_cache_create_count, token_cost_usd,
-                   token_context_utilization_pct, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, NULL, CURRENT_TIMESTAMP)
-                """,
-                [
-                    agent_instance_code,
-                    model_code,
-                    counts["input_tokens"],
-                    counts["output_tokens"],
-                    counts["cache_read_tokens"],
-                    counts["cache_create_tokens"],
-                    cost,
-                ],
-            )
+        # Calculate cost
+        cost = _calculate_cost(store, model_code, input_tokens, output_tokens)
 
-            records_written += 1
+        # Append token event
+        store.append(
+            TokenEvent(
+                entity_id=agent_instance_code,
+                event_type="token_usage",
+                instance_id=agent_instance_code,
+                model=model_code,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                total_tokens=total_tokens,
+                cost_usd=cost,
+            )
+        )
+
+        records_written += 1
 
     return records_written
 
@@ -242,8 +211,11 @@ async def execute(
     Returns:
         Dict with harvest results including records written and total cost.
     """
-    # NOTE: Token harvest tool will be wired by Grunt B in DBC-149.
-    # This registry parameter is added for future wiring.
+    if not registry or not registry.store:
+        return {"error": "StoreAdapter not configured"}
+
+    store = registry.store
+
     # Find session directory
     session_dir = _find_project_session_dir(project_path)
     if not session_dir:
@@ -266,17 +238,19 @@ async def execute(
     # Aggregate by model
     usage_data = _aggregate_usage_by_model(messages)
 
-    # Write to database
-    records_written = _write_token_activity(agent_instance_code, usage_data)
+    # Write to store via token events
+    async with registry.write_lock:
+        records_written = _write_token_activity(store, agent_instance_code, usage_data)
 
     # Calculate total cost
     total_cost = sum(
-        _calculate_cost(
-            model,
-            counts["input_tokens"],
-            counts["output_tokens"],
-            counts["cache_read_tokens"],
-            counts["cache_create_tokens"],
+        float(
+            _calculate_cost(
+                store,
+                model,
+                counts["input_tokens"],
+                counts["output_tokens"],
+            )
         )
         for model, counts in usage_data.items()
     )

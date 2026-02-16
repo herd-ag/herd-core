@@ -2,96 +2,106 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
+from herd_core.types import (
+    AgentRecord,
+    AgentState,
+    TicketEvent,
+    TicketRecord,
+)
+from herd_mcp.adapters import AdapterRegistry
 from herd_mcp.tools import assign
 
 
 @pytest.fixture
-def seeded_db(in_memory_db):
-    """Provide a database with test data for assign tool."""
-    conn = in_memory_db
+def mock_registry(mock_store):
+    """Provide an AdapterRegistry with MockStore for assign tool tests."""
+    return AdapterRegistry(store=mock_store, write_lock=asyncio.Lock())
 
-    # Insert test agents
-    conn.execute("""
-        INSERT INTO herd.agent_def
-          (agent_code, agent_role, agent_status, created_at)
-        VALUES
-          ('mason', 'backend', 'active', CURRENT_TIMESTAMP),
-          ('fresco', 'frontend', 'active', CURRENT_TIMESTAMP)
-        """)
 
-    # Insert test tickets
-    conn.execute("""
-        INSERT INTO herd.ticket_def
-          (ticket_code, ticket_title, ticket_description, ticket_current_status, created_at)
-        VALUES
-          ('DBC-100', 'Test ticket', 'Test description', 'backlog', CURRENT_TIMESTAMP),
-          ('DBC-101', 'Another ticket', 'Another description', 'backlog', CURRENT_TIMESTAMP)
-        """)
+@pytest.fixture
+def seeded_store(mock_store):
+    """Seed the mock store with test data for assign tool."""
+    # Seed tickets
+    mock_store.save(
+        TicketRecord(
+            id="DBC-100",
+            title="Test ticket",
+            description="Test description",
+            status="backlog",
+        )
+    )
+    mock_store.save(
+        TicketRecord(
+            id="DBC-101",
+            title="Another ticket",
+            description="Another description",
+            status="backlog",
+        )
+    )
 
-    # Insert test agent instance for mason
-    conn.execute("""
-        INSERT INTO herd.agent_instance
-          (agent_instance_code, agent_code, model_code, agent_instance_started_at)
-        VALUES ('inst-001', 'mason', 'claude-sonnet-4', CURRENT_TIMESTAMP)
-        """)
+    # Seed agent instance for mason (running)
+    mock_store.save(
+        AgentRecord(
+            id="inst-001",
+            agent="mason",
+            model="claude-sonnet-4",
+            state=AgentState.RUNNING,
+        )
+    )
 
-    yield conn
+    return mock_store
+
+
+@pytest.fixture
+def seeded_registry(seeded_store):
+    """Provide an AdapterRegistry with seeded MockStore."""
+    return AdapterRegistry(store=seeded_store, write_lock=asyncio.Lock())
 
 
 @pytest.mark.asyncio
-async def test_assign_success_with_instance(seeded_db):
+async def test_assign_success_with_instance(seeded_registry, seeded_store):
     """Test successful ticket assignment with active agent instance."""
-    with patch("herd_mcp.tools.assign.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
-
+    with patch("herd_mcp.linear_client.is_linear_identifier", return_value=False):
         result = await assign.execute(
             ticket_id="DBC-100",
             agent_name="mason",
             priority="high",
+            registry=seeded_registry,
         )
 
         assert result["assigned"] is True
         assert result["agent"] == "mason"
         assert result["ticket"]["id"] == "DBC-100"
         assert result["ticket"]["title"] == "Test ticket"
-        assert result["ticket"]["previous_status"] == "backlog"
         assert result["priority"] == "high"
         assert result["agent_instance_code"] == "inst-001"
         assert result["note"] is None
 
         # Verify ticket status was updated
-        ticket_status = seeded_db.execute(
-            "SELECT ticket_current_status FROM herd.ticket_def WHERE ticket_code = 'DBC-100'"
-        ).fetchone()[0]
-        assert ticket_status == "assigned"
+        ticket = seeded_store.get(TicketRecord, "DBC-100")
+        assert ticket.status == "assigned"
 
         # Verify activity was recorded
-        activity = seeded_db.execute("""
-            SELECT ticket_event_type, ticket_status, ticket_activity_comment
-            FROM herd.agent_instance_ticket_activity
-            WHERE ticket_code = 'DBC-100'
-            """).fetchone()
-        assert activity is not None
-        assert activity[0] == "assigned"
-        assert activity[1] == "assigned"
-        assert "high" in activity[2]
+        events = seeded_store.events(TicketEvent, entity_id="DBC-100")
+        assert len(events) == 1
+        assert events[0].event_type == "assigned"
+        assert events[0].new_status == "assigned"
+        assert "high" in events[0].note
 
 
 @pytest.mark.asyncio
-async def test_assign_without_agent_instance(seeded_db):
+async def test_assign_without_agent_instance(seeded_registry, seeded_store):
     """Test ticket assignment when agent has no active instance."""
-    with patch("herd_mcp.tools.assign.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
-
+    with patch("herd_mcp.linear_client.is_linear_identifier", return_value=False):
         result = await assign.execute(
             ticket_id="DBC-101",
             agent_name="fresco",  # Has no active instance
             priority="medium",
+            registry=seeded_registry,
         )
 
         # Should still succeed but note the missing instance
@@ -101,53 +111,42 @@ async def test_assign_without_agent_instance(seeded_db):
         assert result["note"] == "No active agent instance found"
 
         # Verify ticket status was updated
-        ticket_status = seeded_db.execute(
-            "SELECT ticket_current_status FROM herd.ticket_def WHERE ticket_code = 'DBC-101'"
-        ).fetchone()[0]
-        assert ticket_status == "assigned"
+        ticket = seeded_store.get(TicketRecord, "DBC-101")
+        assert ticket.status == "assigned"
 
-        # Verify activity WAS recorded (with NULL agent_instance_code)
-        activity = seeded_db.execute("""
-            SELECT agent_instance_code, ticket_code, ticket_event_type, ticket_status
-            FROM herd.agent_instance_ticket_activity
-            WHERE ticket_code = 'DBC-101'
-            """).fetchone()
-        assert activity is not None
-        assert activity[0] is None  # agent_instance_code is NULL
-        assert activity[1] == "DBC-101"
-        assert activity[2] == "assigned"
-        assert activity[3] == "assigned"
+        # Verify activity was recorded (with empty agent_instance_code)
+        events = seeded_store.events(TicketEvent, entity_id="DBC-101")
+        assert len(events) == 1
+        assert events[0].instance_id == ""
+        assert events[0].entity_id == "DBC-101"
+        assert events[0].event_type == "assigned"
+        assert events[0].new_status == "assigned"
 
 
 @pytest.mark.asyncio
-async def test_assign_missing_agent_name(seeded_db):
+async def test_assign_missing_agent_name(seeded_registry):
     """Test ticket assignment without agent name."""
-    with patch("herd_mcp.tools.assign.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await assign.execute(
+        ticket_id="DBC-100",
+        agent_name=None,
+        priority="high",
+        registry=seeded_registry,
+    )
 
-        result = await assign.execute(
-            ticket_id="DBC-100",
-            agent_name=None,
-            priority="high",
-        )
-
-        assert result["assigned"] is False
-        assert "error" in result
-        assert "agent_name is required" in result["error"]
+    assert result["assigned"] is False
+    assert "error" in result
+    assert "agent_name is required" in result["error"]
 
 
 @pytest.mark.asyncio
-async def test_assign_ticket_not_found(seeded_db):
+async def test_assign_ticket_not_found(seeded_registry):
     """Test ticket assignment for nonexistent ticket."""
-    with patch("herd_mcp.tools.assign.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
-
+    with patch("herd_mcp.linear_client.is_linear_identifier", return_value=False):
         result = await assign.execute(
             ticket_id="NONEXISTENT",
             agent_name="mason",
             priority="high",
+            registry=seeded_registry,
         )
 
         assert result["assigned"] is False
@@ -156,185 +155,167 @@ async def test_assign_ticket_not_found(seeded_db):
 
 
 @pytest.mark.asyncio
-async def test_assign_agent_not_found(seeded_db):
-    """Test ticket assignment to nonexistent agent."""
-    with patch("herd_mcp.tools.assign.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+async def test_assign_agent_not_in_store(seeded_registry):
+    """Test ticket assignment to agent with no instances in store.
 
+    The new adapter-based assign tool does not check an agent definition table.
+    It simply proceeds with agent_instance_code=None and sets a note.
+    """
+    with patch("herd_mcp.linear_client.is_linear_identifier", return_value=False):
         result = await assign.execute(
             ticket_id="DBC-100",
             agent_name="nonexistent",
             priority="high",
+            registry=seeded_registry,
         )
 
-        assert result["assigned"] is False
-        assert "error" in result
-        assert "Agent nonexistent not found" in result["error"]
+        # Assignment succeeds even without a running instance
+        assert result["assigned"] is True
+        assert result["agent_instance_code"] is None
+        assert result["note"] == "No active agent instance found"
 
 
 @pytest.mark.asyncio
-async def test_assign_inactive_agent(seeded_db):
-    """Test ticket assignment to inactive agent."""
-    # First set fresco to inactive
-    seeded_db.execute(
-        "UPDATE herd.agent_def SET agent_status = 'inactive' WHERE agent_code = 'fresco'"
+async def test_assign_no_running_instance(seeded_registry, seeded_store):
+    """Test ticket assignment when agent has an instance but not running."""
+    # Add a stopped instance for fresco
+    seeded_store.save(
+        AgentRecord(
+            id="inst-fresco-001",
+            agent="fresco",
+            model="claude-sonnet-4",
+            state=AgentState.STOPPED,
+        )
     )
 
-    with patch("herd_mcp.tools.assign.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
-
+    with patch("herd_mcp.linear_client.is_linear_identifier", return_value=False):
         result = await assign.execute(
             ticket_id="DBC-100",
             agent_name="fresco",
             priority="high",
+            registry=seeded_registry,
         )
 
-        assert result["assigned"] is False
-        assert "error" in result
-        assert "not active" in result["error"]
-        assert "inactive" in result["error"]
+        # Assignment succeeds but agent_instance_code is None (no RUNNING instance)
+        assert result["assigned"] is True
+        assert result["agent_instance_code"] is None
+        assert result["note"] == "No active agent instance found"
 
 
 @pytest.mark.asyncio
-async def test_assign_updates_modified_at(seeded_db):
+async def test_assign_updates_modified_at(seeded_registry, seeded_store):
     """Test that ticket modified_at is updated on assignment."""
-    with patch("herd_mcp.tools.assign.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
-
-        # Perform assignment
+    with patch("herd_mcp.linear_client.is_linear_identifier", return_value=False):
         result = await assign.execute(
             ticket_id="DBC-100",
             agent_name="mason",
             priority="high",
+            registry=seeded_registry,
         )
 
         assert result["assigned"] is True
 
-        # Verify modified_at was set
-        modified_at = seeded_db.execute(
-            "SELECT modified_at FROM herd.ticket_def WHERE ticket_code = 'DBC-100'"
-        ).fetchone()[0]
-        assert modified_at is not None
+        # Verify modified_at was set (MockStore.save sets it)
+        ticket = seeded_store.get(TicketRecord, "DBC-100")
+        assert ticket.modified_at is not None
 
 
 @pytest.mark.asyncio
-async def test_assign_auto_register_from_linear(seeded_db):
+async def test_assign_auto_register_from_linear(seeded_registry, seeded_store):
     """Test auto-registration of ticket from Linear when not in DB."""
     linear_issue = {
         "id": "linear-uuid-123",
         "identifier": "DBC-125",
         "title": "New ticket from Linear",
         "description": "Fetched from Linear API",
+        "state": {"name": "Backlog"},
         "project": {"id": "proj-1", "name": "MCP Server"},
     }
 
-    with patch("herd_mcp.tools.assign.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    with patch("herd_mcp.linear_client.is_linear_identifier", return_value=True):
+        with patch("herd_mcp.linear_client.get_issue", return_value=linear_issue):
+            result = await assign.execute(
+                ticket_id="DBC-125",
+                agent_name="mason",
+                priority="high",
+                registry=seeded_registry,
+            )
 
-        with patch("herd_mcp.linear_client.is_linear_identifier", return_value=True):
-            with patch("herd_mcp.linear_client.get_issue", return_value=linear_issue):
-                with patch("herd_mcp.linear_client.update_issue_state"):
-                    result = await assign.execute(
-                        ticket_id="DBC-125",
-                        agent_name="mason",
-                        priority="high",
-                    )
+            assert result["assigned"] is True
+            assert result["ticket"]["id"] == "DBC-125"
+            assert result["ticket"]["title"] == "New ticket from Linear"
 
-                    assert result["assigned"] is True
-                    assert result["ticket"]["id"] == "DBC-125"
-                    assert result["ticket"]["title"] == "New ticket from Linear"
-
-                    # Verify ticket was inserted into DB
-                    ticket = seeded_db.execute(
-                        "SELECT ticket_code, ticket_title, project_code FROM herd.ticket_def WHERE ticket_code = 'DBC-125'"
-                    ).fetchone()
-                    assert ticket is not None
-                    assert ticket[0] == "DBC-125"
-                    assert ticket[1] == "New ticket from Linear"
-                    assert ticket[2] == "MCP Server"
+            # Verify ticket was saved to store
+            ticket = seeded_store.get(TicketRecord, "DBC-125")
+            assert ticket is not None
+            assert ticket.id == "DBC-125"
+            assert ticket.title == "New ticket from Linear"
 
 
 @pytest.mark.asyncio
-async def test_assign_linear_sync_success(seeded_db):
+async def test_assign_linear_sync_success(seeded_registry, seeded_store):
     """Test successful Linear sync on assignment."""
-    linear_issue = {
-        "id": "linear-uuid-100",
-        "identifier": "DBC-100",
-    }
+    # Add a tickets adapter to the registry for Linear sync
+    mock_tickets = MagicMock()
+    seeded_registry.tickets = mock_tickets
 
-    with patch("herd_mcp.tools.assign.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    with patch("herd_mcp.linear_client.is_linear_identifier", return_value=True):
+        result = await assign.execute(
+            ticket_id="DBC-100",
+            agent_name="mason",
+            priority="high",
+            registry=seeded_registry,
+        )
 
-        with patch("herd_mcp.linear_client.is_linear_identifier", return_value=True):
-            with patch("herd_mcp.linear_client.get_issue", return_value=linear_issue):
-                with patch("herd_mcp.linear_client.update_issue_state") as mock_update:
-                    result = await assign.execute(
-                        ticket_id="DBC-100",
-                        agent_name="mason",
-                        priority="high",
-                    )
+        assert result["assigned"] is True
+        assert result["linear_synced"] is True
 
-                    assert result["assigned"] is True
-                    assert result["linear_synced"] is True
-
-                    # Verify Linear API was called with correct state
-                    mock_update.assert_called_once_with(
-                        "linear-uuid-100",
-                        "408b4cda-4d6e-403a-8030-78e8b0a6ffee",  # Assigned state
-                    )
+        # Verify ticket adapter transition was called
+        mock_tickets.transition.assert_called_once_with("DBC-100", "assigned")
 
 
 @pytest.mark.asyncio
-async def test_assign_linear_sync_failure(seeded_db):
+async def test_assign_linear_sync_failure(seeded_registry, seeded_store):
     """Test graceful handling of Linear sync failure."""
-    with patch("herd_mcp.tools.assign.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    with patch("herd_mcp.linear_client.is_linear_identifier", return_value=True):
+        with patch(
+            "herd_mcp.linear_client.get_issue", side_effect=Exception("API error")
+        ):
+            result = await assign.execute(
+                ticket_id="DBC-100",
+                agent_name="mason",
+                priority="high",
+                registry=seeded_registry,
+            )
 
-        with patch("herd_mcp.linear_client.is_linear_identifier", return_value=True):
-            with patch(
-                "herd_mcp.linear_client.get_issue", side_effect=Exception("API error")
-            ):
-                result = await assign.execute(
-                    ticket_id="DBC-100",
-                    agent_name="mason",
-                    priority="high",
-                )
-
-                # Assignment should still succeed
-                assert result["assigned"] is True
-                assert result["linear_synced"] is False
-                assert "linear_sync_error" in result
+            # Assignment should still succeed
+            assert result["assigned"] is True
+            assert result["linear_synced"] is False
+            assert "linear_sync_error" in result
 
 
 @pytest.mark.asyncio
-async def test_assign_non_linear_ticket_no_sync(seeded_db):
+async def test_assign_non_linear_ticket_no_sync(seeded_registry, seeded_store):
     """Test that non-Linear tickets don't attempt sync."""
     # Insert a non-Linear style ticket
-    seeded_db.execute("""
-        INSERT INTO herd.ticket_def
-          (ticket_code, ticket_title, ticket_current_status, created_at)
-        VALUES ('INTERNAL-001', 'Internal ticket', 'backlog', CURRENT_TIMESTAMP)
-    """)
+    seeded_store.save(
+        TicketRecord(
+            id="INTERNAL-001",
+            title="Internal ticket",
+            status="backlog",
+        )
+    )
 
-    with patch("herd_mcp.tools.assign.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    with patch("herd_mcp.linear_client.is_linear_identifier", return_value=False):
+        with patch("herd_mcp.linear_client.get_issue") as mock_get:
+            result = await assign.execute(
+                ticket_id="INTERNAL-001",
+                agent_name="mason",
+                priority="normal",
+                registry=seeded_registry,
+            )
 
-        with patch("herd_mcp.linear_client.is_linear_identifier", return_value=False):
-            with patch("herd_mcp.linear_client.get_issue") as mock_get:
-                result = await assign.execute(
-                    ticket_id="INTERNAL-001",
-                    agent_name="mason",
-                    priority="normal",
-                )
-
-                assert result["assigned"] is True
-                assert result["linear_synced"] is False
-                # Linear API should not have been called
-                mock_get.assert_not_called()
+            assert result["assigned"] is True
+            assert result["linear_synced"] is False
+            # Linear API should not have been called
+            mock_get.assert_not_called()

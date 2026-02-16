@@ -2,152 +2,161 @@
 
 These tests verify that:
 1. Tools accept the registry parameter
-2. Tools fall back to SQL when adapter unavailable
-3. Server initializes registry with all adapter slots
+2. Tools use StoreAdapter when provided via registry
+3. Tools return error when registry/store is not configured
+4. Server initializes registry with all adapter slots
 """
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+import asyncio
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from herd_core.types import (
+    AgentRecord,
+    AgentState,
+    TicketRecord,
+)
 from herd_mcp.adapters import AdapterRegistry
 from herd_mcp.tools import assign, lifecycle, log, metrics, record_decision, status, transition
 
 
 @pytest.fixture
-def seeded_db(in_memory_db):
-    """Provide a database with test data."""
-    conn = in_memory_db
-
-    # Insert test agent
-    conn.execute("""
-        INSERT INTO herd.agent_def
-          (agent_code, agent_role, agent_status, created_at)
-        VALUES ('mason', 'backend', 'active', CURRENT_TIMESTAMP)
-        """)
-
-    # Insert test agent instance
-    conn.execute("""
-        INSERT INTO herd.agent_instance
-          (agent_instance_code, agent_code, model_code, agent_instance_started_at)
-        VALUES ('inst-001', 'mason', 'claude-sonnet-4', CURRENT_TIMESTAMP)
-        """)
-
-    # Insert test ticket
-    conn.execute("""
-        INSERT INTO herd.ticket_def
-          (ticket_code, ticket_title, ticket_description, ticket_current_status, created_at)
-        VALUES ('DBC-148', 'Test Ticket', 'Test description', 'backlog', CURRENT_TIMESTAMP)
-        """)
-
-    yield conn
+def mock_registry(mock_store):
+    """Create an AdapterRegistry with MockStore."""
+    return AdapterRegistry(store=mock_store, write_lock=asyncio.Lock())
 
 
-# Lifecycle tests - verify SQL fallback works
+@pytest.fixture
+def seeded_store(mock_store):
+    """Seed mock_store with test data."""
+    mock_store.save(
+        AgentRecord(
+            id="inst-001",
+            agent="mason",
+            model="claude-sonnet-4",
+            state=AgentState.RUNNING,
+            started_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        )
+    )
+    mock_store.save(
+        TicketRecord(
+            id="DBC-148",
+            title="Test Ticket",
+            description="Test description",
+            status="backlog",
+        )
+    )
+    return mock_store
+
+
+@pytest.fixture
+def seeded_registry(seeded_store):
+    """Create an AdapterRegistry with seeded MockStore."""
+    return AdapterRegistry(store=seeded_store, write_lock=asyncio.Lock())
+
+
+# Lifecycle tests - verify tools work with StoreAdapter
 
 
 @pytest.mark.asyncio
-async def test_lifecycle_decommission_fallback_to_sql(seeded_db):
-    """Test decommission falls back to SQL when StoreAdapter unavailable."""
+async def test_lifecycle_decommission_with_store(seeded_store, seeded_registry):
+    """Test decommission works with StoreAdapter."""
+    result = await lifecycle.decommission("mason", "steve", seeded_registry)
+
+    assert result["success"] is True
+    assert result["target_agent"] == "mason"
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_standdown_with_store(seeded_store, seeded_registry):
+    """Test standdown works with StoreAdapter."""
+    result = await lifecycle.standdown("mason", "steve", seeded_registry)
+
+    assert result["success"] is True
+    assert result["target_agent"] == "mason"
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_decommission_no_store():
+    """Test decommission returns error when StoreAdapter unavailable."""
     registry = AdapterRegistry()  # No store adapter
 
-    with patch("herd_mcp.tools.lifecycle.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await lifecycle.decommission("mason", "steve", registry)
 
-        result = await lifecycle.decommission("mason", "steve", registry)
-
-        assert result["success"] is True
-        assert result["target_agent"] == "mason"
+    assert "error" in result
+    assert result["error"] == "StoreAdapter not configured"
 
 
 @pytest.mark.asyncio
-async def test_lifecycle_standdown_fallback_to_sql(seeded_db):
-    """Test standdown falls back to SQL when StoreAdapter unavailable."""
+async def test_lifecycle_standdown_no_store():
+    """Test standdown returns error when StoreAdapter unavailable."""
     registry = AdapterRegistry()
 
-    with patch("herd_mcp.tools.lifecycle.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await lifecycle.standdown("mason", "steve", registry)
 
-        result = await lifecycle.standdown("mason", "steve", registry)
-
-        assert result["success"] is True
-        assert result["target_agent"] == "mason"
+    assert "error" in result
+    assert result["error"] == "StoreAdapter not configured"
 
 
 # Log tests
 
 
 @pytest.mark.asyncio
-async def test_log_fallback_to_sql(seeded_db):
-    """Test log falls back to SQL when StoreAdapter unavailable."""
-    registry = AdapterRegistry()
+async def test_log_with_store(seeded_store, seeded_registry):
+    """Test log works with StoreAdapter."""
+    with patch("herd_mcp.tools.log._post_to_slack") as mock_slack:
+        mock_slack.return_value = {"success": True, "response": {"ok": True}}
 
-    with patch("herd_mcp.tools.log.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+        result = await log.execute(
+            message="Test message",
+            channel="#herd-feed",
+            await_response=False,
+            agent_name="mason",
+            registry=seeded_registry,
+        )
 
-        with patch("herd_mcp.tools.log._post_to_slack") as mock_slack:
-            mock_slack.return_value = {"success": True, "response": {"ok": True}}
-
-            result = await log.execute(
-                message="Test message",
-                channel="#herd-feed",
-                await_response=False,
-                agent_name="mason",
-                registry=registry,
-            )
-
-            assert result["posted"] is True
+        assert result["posted"] is True
 
 
 # Assign tests
 
 
 @pytest.mark.asyncio
-async def test_assign_fallback_to_sql(seeded_db):
-    """Test assign falls back to SQL when StoreAdapter unavailable."""
-    registry = AdapterRegistry()
+async def test_assign_with_store(seeded_store, seeded_registry):
+    """Test assign works with StoreAdapter."""
+    with patch("herd_mcp.linear_client.is_linear_identifier", return_value=False):
+        result = await assign.execute("DBC-148", "mason", "normal", seeded_registry)
 
-    with patch("herd_mcp.tools.assign.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
-
-        result = await assign.execute("DBC-148", "mason", "normal", registry)
-
-        assert result["assigned"] is True
+    assert result["assigned"] is True
 
 
 # Transition tests
 
 
 @pytest.mark.asyncio
-async def test_transition_fallback_to_sql(seeded_db):
-    """Test transition falls back to SQL when StoreAdapter unavailable."""
-    registry = AdapterRegistry()
+async def test_transition_with_store(seeded_store, seeded_registry):
+    """Test transition works with StoreAdapter."""
+    with patch("herd_mcp.linear_client.is_linear_identifier", return_value=False):
+        result = await transition.execute(
+            "DBC-148", "in_progress", None, None, "mason", seeded_registry
+        )
 
-    with patch("herd_mcp.tools.transition.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
-
-        result = await transition.execute("DBC-148", "in_progress", None, None, "mason", registry)
-
-        assert result["ticket"]["id"] == "DBC-148"
+    assert result["ticket"]["id"] == "DBC-148"
 
 
 # Record decision tests
 
 
 @pytest.mark.asyncio
-async def test_record_decision_fallback_to_sql(in_memory_db):
-    """Test record_decision falls back to SQL when StoreAdapter unavailable."""
-    registry = AdapterRegistry()
-
-    with patch("herd_mcp.tools.record_decision.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=in_memory_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+async def test_record_decision_with_store(mock_store, mock_registry):
+    """Test record_decision works with StoreAdapter."""
+    with patch(
+        "herd_mcp.tools.record_decision._post_to_slack_decisions"
+    ) as mock_slack:
+        mock_slack.return_value = {"success": True}
 
         result = await record_decision.execute(
             decision_type="implementation",
@@ -157,43 +166,31 @@ async def test_record_decision_fallback_to_sql(in_memory_db):
             alternatives_considered=None,
             ticket_code="DBC-148",
             agent_name="mason",
-            registry=registry,
+            registry=mock_registry,
         )
 
-        assert result["success"] is True
+    assert result["success"] is True
 
 
-# Status and Metrics tests (complex queries - kept as raw SQL)
-
-
-@pytest.mark.asyncio
-async def test_status_with_registry(seeded_db):
-    """Test status accepts registry but uses SQL for complex queries."""
-    registry = AdapterRegistry()
-
-    with patch("herd_mcp.tools.status.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
-
-        result = await status.execute("all", "mason", registry)
-
-        assert result["scope"] == "all"
-        assert "agents" in result
+# Status and Metrics tests
 
 
 @pytest.mark.asyncio
-async def test_metrics_with_registry(seeded_db):
-    """Test metrics accepts registry but uses SQL for complex queries."""
-    registry = AdapterRegistry()
+async def test_status_with_registry(seeded_store, seeded_registry):
+    """Test status works with StoreAdapter."""
+    result = await status.execute("all", "mason", seeded_registry)
 
-    with patch("herd_mcp.tools.metrics.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    assert result["scope"] == "all"
+    assert "agents" in result
 
-        result = await metrics.execute("cost_per_ticket", None, None, "mason", registry)
 
-        assert "data" in result
-        assert "summary" in result
+@pytest.mark.asyncio
+async def test_metrics_with_registry(seeded_store, seeded_registry):
+    """Test metrics works with StoreAdapter."""
+    result = await metrics.execute("cost_per_ticket", None, None, "mason", seeded_registry)
+
+    assert "data" in result
+    assert "summary" in result
 
 
 # Registry initialization test

@@ -2,39 +2,57 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+from decimal import Decimal
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from herd_core.types import (
+    ModelRecord,
+    TokenEvent,
+)
+from herd_mcp.adapters import AdapterRegistry
 from herd_mcp.tools import token_harvest
 
 
 @pytest.fixture
-def seeded_db(in_memory_db):
-    """Provide a database with test data for token harvest tool."""
-    conn = in_memory_db
+def mock_registry(mock_store):
+    """Create an AdapterRegistry with MockStore."""
+    return AdapterRegistry(store=mock_store, write_lock=asyncio.Lock())
 
-    # Insert test model pricing
-    conn.execute("""
-        INSERT INTO herd.model_def
-          (model_code, model_provider, model_context_window,
-           model_input_cost_per_m, model_output_cost_per_m,
-           model_cache_read_cost_per_m, model_cache_create_cost_per_m,
-           created_at)
-        VALUES ('claude-opus-4-6', 'anthropic', 200000, 15.00, 75.00, 1.50, 18.75, CURRENT_TIMESTAMP)
-        """)
 
-    conn.execute("""
-        INSERT INTO herd.model_def
-          (model_code, model_provider, model_context_window,
-           model_input_cost_per_m, model_output_cost_per_m,
-           model_cache_read_cost_per_m, model_cache_create_cost_per_m,
-           created_at)
-        VALUES ('claude-sonnet-4', 'anthropic', 200000, 3.00, 15.00, 0.30, 3.75, CURRENT_TIMESTAMP)
-        """)
+@pytest.fixture
+def seeded_store(mock_store):
+    """Seed mock_store with model pricing data for token harvest tool."""
+    mock_store.save(
+        ModelRecord(
+            id="claude-opus-4-6",
+            name="claude-opus-4-6",
+            provider="anthropic",
+            context_window=200000,
+            input_cost_per_token=Decimal("0.000015"),  # $15/M = $0.000015/token
+            output_cost_per_token=Decimal("0.000075"),  # $75/M = $0.000075/token
+        )
+    )
+    mock_store.save(
+        ModelRecord(
+            id="claude-sonnet-4",
+            name="claude-sonnet-4",
+            provider="anthropic",
+            context_window=200000,
+            input_cost_per_token=Decimal("0.000003"),  # $3/M = $0.000003/token
+            output_cost_per_token=Decimal("0.000015"),  # $15/M = $0.000015/token
+        )
+    )
+    return mock_store
 
-    yield conn
+
+@pytest.fixture
+def seeded_registry(seeded_store):
+    """Create an AdapterRegistry with seeded MockStore."""
+    return AdapterRegistry(store=seeded_store, write_lock=asyncio.Lock())
 
 
 @pytest.fixture
@@ -217,46 +235,36 @@ def test_aggregate_usage_by_model():
     assert result["claude-sonnet-4"]["cache_create_tokens"] == 500
 
 
-def test_calculate_cost(seeded_db):
+def test_calculate_cost(seeded_store):
     """Test cost calculation based on model pricing."""
-    with patch("herd_mcp.tools.token_harvest.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    # Calculate cost for claude-opus-4-6
+    # Pricing: input=$0.000015/token, output=$0.000075/token
+    cost = token_harvest._calculate_cost(
+        seeded_store,
+        "claude-opus-4-6",
+        input_tokens=1_000_000,  # 1M tokens
+        output_tokens=500_000,  # 0.5M tokens
+    )
 
-        # Calculate cost for claude-opus-4-6
-        # Pricing: input=$15/M, output=$75/M, cache_read=$1.50/M, cache_create=$18.75/M
-        cost = token_harvest._calculate_cost(
-            "claude-opus-4-6",
-            input_tokens=1_000_000,  # 1M tokens
-            output_tokens=500_000,  # 0.5M tokens
-            cache_read_tokens=2_000_000,  # 2M tokens
-            cache_create_tokens=1_000_000,  # 1M tokens
-        )
-
-        # Expected: (1M * $15) + (0.5M * $75) + (2M * $1.50) + (1M * $18.75)
-        # = $15 + $37.50 + $3.00 + $18.75 = $74.25
-        assert abs(cost - 74.25) < 0.01
+    # Expected: (1M * $0.000015) + (0.5M * $0.000075)
+    # = $15 + $37.50 = $52.50
+    assert abs(float(cost) - 52.50) < 0.01
 
 
-def test_calculate_cost_unknown_model(seeded_db):
+def test_calculate_cost_unknown_model(seeded_store):
     """Test cost calculation for unknown model returns zero."""
-    with patch("herd_mcp.tools.token_harvest.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    cost = token_harvest._calculate_cost(
+        seeded_store,
+        "unknown-model",
+        input_tokens=1000,
+        output_tokens=500,
+    )
 
-        cost = token_harvest._calculate_cost(
-            "unknown-model",
-            input_tokens=1000,
-            output_tokens=500,
-            cache_read_tokens=0,
-            cache_create_tokens=0,
-        )
-
-        assert cost == 0.0
+    assert cost == Decimal("0")
 
 
-def test_write_token_activity(seeded_db):
-    """Test writing token activity records to database."""
+def test_write_token_activity(seeded_store):
+    """Test writing token activity records via store."""
     usage_data = {
         "claude-opus-4-6": {
             "input_tokens": 1500,
@@ -272,78 +280,67 @@ def test_write_token_activity(seeded_db):
         },
     }
 
-    with patch("herd_mcp.tools.token_harvest.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    records_written = token_harvest._write_token_activity(
+        seeded_store, "inst-001", usage_data
+    )
 
-        records_written = token_harvest._write_token_activity("inst-001", usage_data)
+    assert records_written == 2
 
-        assert records_written == 2
+    # Verify token events in store
+    events = seeded_store.events(TokenEvent)
+    assert len(events) == 2
 
-        # Verify records in database
-        activities = seeded_db.execute("""
-            SELECT agent_instance_code, model_code, token_input_count,
-                   token_output_count, token_cache_read_count, token_cache_create_count,
-                   token_cost_usd
-            FROM herd.agent_instance_token_activity
-            ORDER BY model_code
-            """).fetchall()
+    # Sort events by model for deterministic assertions
+    events_by_model = {e.model: e for e in events}
 
-        assert len(activities) == 2
+    # Check first record (claude-opus-4-6)
+    opus_event = events_by_model["claude-opus-4-6"]
+    assert opus_event.entity_id == "inst-001"
+    assert opus_event.input_tokens == 1500
+    assert opus_event.output_tokens == 750
+    assert opus_event.cost_usd > 0  # cost should be calculated
 
-        # Check first record (claude-opus-4-6)
-        assert activities[0][0] == "inst-001"
-        assert activities[0][1] == "claude-opus-4-6"
-        assert activities[0][2] == 1500  # input
-        assert activities[0][3] == 750  # output
-        assert activities[0][4] == 3000  # cache_read
-        assert activities[0][5] == 1500  # cache_create
-        assert activities[0][6] > 0  # cost should be calculated
-
-        # Check second record (claude-sonnet-4)
-        assert activities[1][0] == "inst-001"
-        assert activities[1][1] == "claude-sonnet-4"
+    # Check second record (claude-sonnet-4)
+    sonnet_event = events_by_model["claude-sonnet-4"]
+    assert sonnet_event.entity_id == "inst-001"
+    assert sonnet_event.model == "claude-sonnet-4"
 
 
 @pytest.mark.asyncio
-async def test_execute_success(seeded_db, sample_jsonl_dir):
+async def test_execute_success(seeded_store, seeded_registry, sample_jsonl_dir):
     """Test successful token harvest execution."""
-    with patch("herd_mcp.tools.token_harvest.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    with patch("herd_mcp.tools.token_harvest.Path.home") as mock_home:
+        mock_home.return_value = sample_jsonl_dir
 
-        with patch("herd_mcp.tools.token_harvest.Path.home") as mock_home:
-            mock_home.return_value = sample_jsonl_dir
+        result = await token_harvest.execute(
+            "inst-001", "/tmp/test-project", seeded_registry
+        )
 
-            result = await token_harvest.execute("inst-001", "/tmp/test-project")
-
-            assert result["success"] is True
-            assert result["records_written"] == 2
-            assert result["total_cost_usd"] > 0
-            assert "claude-opus-4-6" in result["models_processed"]
-            assert "claude-sonnet-4" in result["models_processed"]
+        assert result["success"] is True
+        assert result["records_written"] == 2
+        assert result["total_cost_usd"] > 0
+        assert "claude-opus-4-6" in result["models_processed"]
+        assert "claude-sonnet-4" in result["models_processed"]
 
 
 @pytest.mark.asyncio
-async def test_execute_no_session_dir(seeded_db):
+async def test_execute_no_session_dir(seeded_store, seeded_registry):
     """Test execution when session directory not found."""
-    with patch("herd_mcp.tools.token_harvest.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    with patch("herd_mcp.tools.token_harvest.Path.home") as mock_home:
+        mock_home.return_value = Path("/nonexistent")
 
-        with patch("herd_mcp.tools.token_harvest.Path.home") as mock_home:
-            mock_home.return_value = Path("/nonexistent")
+        result = await token_harvest.execute(
+            "inst-001", "/tmp/test-project", seeded_registry
+        )
 
-            result = await token_harvest.execute("inst-001", "/tmp/test-project")
-
-            assert result["success"] is False
-            assert "error" in result
-            assert "Could not locate session directory" in result["error"]
-            assert result["records_written"] == 0
+        assert result["success"] is False
+        assert "error" in result
+        assert "Could not locate session directory" in result["error"]
+        assert result["records_written"] == 0
 
 
 @pytest.mark.asyncio
-async def test_execute_no_usage_data(seeded_db, tmp_path):
+async def test_execute_no_usage_data(seeded_store, seeded_registry, tmp_path):
     """Test execution when no usage data found in session files."""
     # Create the full .claude/projects structure
     claude_home = tmp_path / "home"
@@ -356,16 +353,14 @@ async def test_execute_no_usage_data(seeded_db, tmp_path):
     with open(session_file, "w") as f:
         f.write('{"type": "file-history-snapshot", "messageId": "msg-001"}\n')
 
-    with patch("herd_mcp.tools.token_harvest.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    with patch("herd_mcp.tools.token_harvest.Path.home") as mock_home:
+        mock_home.return_value = claude_home
 
-        with patch("herd_mcp.tools.token_harvest.Path.home") as mock_home:
-            mock_home.return_value = claude_home
+        result = await token_harvest.execute(
+            "inst-001", "/tmp/test-project", seeded_registry
+        )
 
-            result = await token_harvest.execute("inst-001", "/tmp/test-project")
-
-            assert result["success"] is True
-            assert result["records_written"] == 0
-            assert result["total_cost_usd"] == 0.0
-            assert "No token usage data found" in result["message"]
+        assert result["success"] is True
+        assert result["records_written"] == 0
+        assert result["total_cost_usd"] == 0.0
+        assert "No token usage data found" in result["message"]

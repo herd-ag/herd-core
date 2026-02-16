@@ -33,6 +33,12 @@ async def test_all_tools_registered():
         "herd_standdown",
         "herd_harvest_tokens",
         "herd_record_decision",
+        "herd_assume",
+        "herd_recall",
+        "herd_remember",
+        "herd_graph",
+        "herd_send",
+        "herd_checkin",
     ]
 
     for expected_tool in expected_tools:
@@ -41,6 +47,6 @@ async def test_all_tools_registered():
 
 @pytest.mark.asyncio
 async def test_tool_count():
-    """Test that we have exactly 13 tools registered."""
+    """Test that we have exactly 18 tools registered."""
     tools = await mcp.list_tools()
-    assert len(tools) == 13
+    assert len(tools) == 18

@@ -36,7 +36,7 @@ class MockResponse:
 
 def test_get_api_key_from_env():
     """Test getting API key from environment."""
-    with patch.dict(os.environ, {"LINEAR_API_KEY": "test-key-123"}):
+    with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-key-123"}):
         assert _get_api_key() == "test-key-123"
 
 
@@ -50,7 +50,7 @@ def test_graphql_request_success():
     """Test successful GraphQL request."""
     mock_response = MockResponse({"data": {"test": "value"}})
 
-    with patch.dict(os.environ, {"LINEAR_API_KEY": "test-key"}):
+    with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-key"}):
         with patch("urllib.request.urlopen", return_value=mock_response):
             result = _graphql_request("query { test }")
             assert result == {"data": {"test": "value"}}
@@ -60,7 +60,7 @@ def test_graphql_request_auth_header():
     """Test that auth header uses raw API key without Bearer prefix."""
     mock_response = MockResponse({"data": {"test": "value"}})
 
-    with patch.dict(os.environ, {"LINEAR_API_KEY": "test-api-key-123"}):
+    with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-api-key-123"}):
         with patch("urllib.request.urlopen", return_value=mock_response) as mock_urlopen:
             _graphql_request("query { test }")
 
@@ -76,7 +76,7 @@ def test_graphql_request_auth_header():
 def test_graphql_request_missing_api_key():
     """Test GraphQL request without API key."""
     with patch.dict(os.environ, {}, clear=True):
-        with pytest.raises(Exception, match="LINEAR_API_KEY"):
+        with pytest.raises(Exception, match="HERD_TICKET_LINEAR_API_KEY"):
             _graphql_request("query { test }")
 
 
@@ -86,7 +86,7 @@ def test_graphql_request_with_errors():
         {"errors": [{"message": "Field not found"}, {"message": "Invalid query"}]}
     )
 
-    with patch.dict(os.environ, {"LINEAR_API_KEY": "test-key"}):
+    with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-key"}):
         with patch("urllib.request.urlopen", return_value=mock_response):
             with pytest.raises(Exception, match="Linear GraphQL error"):
                 _graphql_request("query { invalid }")
@@ -113,7 +113,7 @@ def test_get_issue_found():
         }
     )
 
-    with patch.dict(os.environ, {"LINEAR_API_KEY": "test-key"}):
+    with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-key"}):
         with patch("urllib.request.urlopen", return_value=mock_response):
             issue = get_issue("DBC-120")
             assert issue is not None
@@ -125,7 +125,7 @@ def test_get_issue_not_found():
     """Test getting an issue that doesn't exist."""
     mock_response = MockResponse({"data": {"issueSearch": {"nodes": []}}})
 
-    with patch.dict(os.environ, {"LINEAR_API_KEY": "test-key"}):
+    with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-key"}):
         with patch("urllib.request.urlopen", return_value=mock_response):
             issue = get_issue("DBC-999")
             assert issue is None
@@ -147,7 +147,7 @@ def test_get_issue_multiple_results():
         }
     )
 
-    with patch.dict(os.environ, {"LINEAR_API_KEY": "test-key"}):
+    with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-key"}):
         with patch("urllib.request.urlopen", return_value=mock_response):
             issue = get_issue("DBC-120")
             assert issue is not None
@@ -157,7 +157,7 @@ def test_get_issue_multiple_results():
 
 def test_get_issue_api_error():
     """Test getting issue when API returns error."""
-    with patch.dict(os.environ, {"LINEAR_API_KEY": "test-key"}):
+    with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-key"}):
         with patch("urllib.request.urlopen", side_effect=Exception("Network error")):
             issue = get_issue("DBC-120")
             assert issue is None
@@ -180,7 +180,7 @@ def test_update_issue_state_success():
         }
     )
 
-    with patch.dict(os.environ, {"LINEAR_API_KEY": "test-key"}):
+    with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-key"}):
         with patch("urllib.request.urlopen", return_value=mock_response):
             result = update_issue_state("issue-uuid-123", "new-state-id")
             assert result["id"] == "issue-uuid-123"
@@ -191,7 +191,7 @@ def test_update_issue_state_failure():
     """Test update issue state when mutation returns failure."""
     mock_response = MockResponse({"data": {"issueUpdate": {"success": False}}})
 
-    with patch.dict(os.environ, {"LINEAR_API_KEY": "test-key"}):
+    with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-key"}):
         with patch("urllib.request.urlopen", return_value=mock_response):
             with pytest.raises(Exception, match="Failed to update Linear issue state"):
                 update_issue_state("issue-uuid-123", "new-state-id")
@@ -215,7 +215,7 @@ def test_create_issue_minimal():
         }
     )
 
-    with patch.dict(os.environ, {"LINEAR_API_KEY": "test-key"}):
+    with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-key"}):
         with patch("urllib.request.urlopen", return_value=mock_response):
             result = create_issue("team-id-123", "New issue")
             assert result["identifier"] == "DBC-125"
@@ -239,7 +239,7 @@ def test_create_issue_full():
         }
     )
 
-    with patch.dict(os.environ, {"LINEAR_API_KEY": "test-key"}):
+    with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-key"}):
         with patch("urllib.request.urlopen", return_value=mock_response):
             result = create_issue(
                 team_id="team-id-123",
@@ -257,7 +257,7 @@ def test_create_issue_failure():
     """Test create issue when mutation returns failure."""
     mock_response = MockResponse({"data": {"issueCreate": {"success": False}}})
 
-    with patch.dict(os.environ, {"LINEAR_API_KEY": "test-key"}):
+    with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-key"}):
         with patch("urllib.request.urlopen", return_value=mock_response):
             with pytest.raises(Exception, match="Failed to create Linear issue"):
                 create_issue("team-id", "Title")
@@ -286,7 +286,7 @@ def test_search_issues_success():
         }
     )
 
-    with patch.dict(os.environ, {"LINEAR_API_KEY": "test-key"}):
+    with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-key"}):
         with patch("urllib.request.urlopen", return_value=mock_response):
             results = search_issues("bug")
             assert len(results) == 2
@@ -308,7 +308,7 @@ def test_search_issues_with_team_filter():
         }
     )
 
-    with patch.dict(os.environ, {"LINEAR_API_KEY": "test-key"}):
+    with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-key"}):
         with patch("urllib.request.urlopen", return_value=mock_response):
             results = search_issues("bug", team_id="team-1")
             assert len(results) == 1
@@ -317,7 +317,7 @@ def test_search_issues_with_team_filter():
 
 def test_search_issues_api_error():
     """Test search issues when API fails."""
-    with patch.dict(os.environ, {"LINEAR_API_KEY": "test-key"}):
+    with patch.dict(os.environ, {"HERD_TICKET_LINEAR_API_KEY": "test-key"}):
         with patch("urllib.request.urlopen", side_effect=Exception("API error")):
             results = search_issues("bug")
             assert results == []

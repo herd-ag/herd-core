@@ -10,8 +10,6 @@ from herd_mcp.tools._helpers import (
     CRAFT_SECTION_MAP,
     extract_craft_section,
     find_repo_root,
-    get_handoffs,
-    get_recent_hdrs,
     read_file_safe,
     read_status_md,
 )
@@ -197,58 +195,6 @@ def test_find_repo_root_raises_when_not_in_repo():
         with patch("herd_mcp.tools._helpers.Path.cwd", return_value=Path(tmpdir)):
             with pytest.raises(RuntimeError, match="Could not find repository root"):
                 find_repo_root()
-
-
-# ---- get_handoffs ----
-
-
-def test_get_handoffs_no_directory():
-    """Test get_handoffs when handoffs directory does not exist."""
-    from datetime import datetime, timedelta
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        result = get_handoffs(Path(tmpdir), datetime.now() - timedelta(days=7))
-        assert result == []
-
-
-def test_get_handoffs_with_files():
-    """Test get_handoffs returns recent handoff files."""
-    from datetime import datetime, timedelta
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        handoffs_dir = Path(tmpdir) / ".herd" / "handoffs"
-        handoffs_dir.mkdir(parents=True)
-        (handoffs_dir / "DBC-100.md").write_text("handoff content")
-        result = get_handoffs(Path(tmpdir), datetime.now() - timedelta(days=7))
-        assert len(result) == 1
-        assert result[0]["filename"] == "DBC-100.md"
-        assert result[0]["ticket"] == "DBC-100"
-
-
-# ---- get_recent_hdrs ----
-
-
-def test_get_recent_hdrs_no_directory():
-    """Test get_recent_hdrs when decisions directory does not exist."""
-    from datetime import datetime, timedelta
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        result = get_recent_hdrs(Path(tmpdir), datetime.now() - timedelta(days=7))
-        assert result == []
-
-
-def test_get_recent_hdrs_with_files():
-    """Test get_recent_hdrs returns recent HDR files."""
-    from datetime import datetime, timedelta
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        decisions_dir = Path(tmpdir) / ".herd" / "decisions"
-        decisions_dir.mkdir(parents=True)
-        (decisions_dir / "0024-team-naming.md").write_text("HDR content")
-        result = get_recent_hdrs(Path(tmpdir), datetime.now() - timedelta(days=7))
-        assert len(result) == 1
-        assert result[0]["filename"] == "0024-team-naming.md"
-        assert "Team Naming" in result[0]["title"]
 
 
 # ---- CRAFT_SECTION_MAP ----

@@ -40,7 +40,7 @@ def test_adapter_registry_with_values():
     not importlib.util.find_spec("herd_notify_slack"),
     reason="herd_notify_slack not installed"
 )
-@patch.dict("os.environ", {"HERD_SLACK_TOKEN": "test-slack-token"})
+@patch.dict("os.environ", {"HERD_NOTIFY_SLACK_TOKEN": "test-slack-token"})
 @patch("herd_notify_slack.SlackNotifyAdapter")
 def test_get_adapter_registry_with_slack(mock_slack_adapter):
     """Test that get_adapter_registry initializes SlackNotifyAdapter when token is present."""
@@ -80,7 +80,7 @@ def test_get_adapter_registry_without_slack_token():
     not importlib.util.find_spec("herd_ticket_linear"),
     reason="herd_ticket_linear not installed"
 )
-@patch.dict("os.environ", {"LINEAR_API_KEY": "test-linear-key"})
+@patch.dict("os.environ", {"HERD_TICKET_LINEAR_API_KEY": "test-linear-key"})
 @patch("herd_ticket_linear.LinearTicketAdapter")
 def test_get_adapter_registry_with_linear(mock_linear_adapter):
     """Test that get_adapter_registry initializes LinearTicketAdapter when key is present."""
@@ -119,25 +119,30 @@ def test_get_adapter_registry_import_error():
 
 
 @pytest.mark.asyncio
-async def test_log_tool_uses_adapter(in_memory_db):
+async def test_log_tool_uses_adapter(mock_store):
     """Test that log tool uses NotifyAdapter when available."""
+    import asyncio
+
     from herd_mcp.tools import log
 
     # Create mock adapter
-    mock_notify = AsyncMock()
-    mock_notify.post = AsyncMock(return_value={"ts": "123", "channel": "C123"})
+    mock_notify = MagicMock()
+    mock_notify.post = MagicMock(return_value={"ts": "123", "channel": "C123"})
 
-    registry = AdapterRegistry(notify=mock_notify)
+    registry = AdapterRegistry(
+        store=mock_store,
+        notify=mock_notify,
+        write_lock=asyncio.Lock(),
+    )
 
     # Execute with registry
-    with patch("herd_mcp.tools.log.connection", return_value=in_memory_db):
-        result = await log.execute(
-            message="Test message",
-            channel="#test",
-            await_response=False,
-            agent_name="test-agent",
-            registry=registry,
-        )
+    result = await log.execute(
+        message="Test message",
+        channel="#test",
+        await_response=False,
+        agent_name="test-agent",
+        registry=registry,
+    )
 
     # Verify adapter was called
     mock_notify.post.assert_called_once_with(
@@ -150,17 +155,20 @@ async def test_log_tool_uses_adapter(in_memory_db):
 
 
 @pytest.mark.asyncio
-async def test_log_tool_fallback_without_adapter(in_memory_db):
+async def test_log_tool_fallback_without_adapter(mock_store):
     """Test that log tool falls back to inline implementation when adapter is None."""
+    import asyncio
+
     from herd_mcp.tools import log
 
-    registry = AdapterRegistry(notify=None)
+    registry = AdapterRegistry(
+        store=mock_store,
+        notify=None,
+        write_lock=asyncio.Lock(),
+    )
 
     # Mock the inline _post_to_slack function
-    with (
-        patch("herd_mcp.tools.log.connection", return_value=in_memory_db),
-        patch("herd_mcp.tools.log._post_to_slack") as mock_post,
-    ):
+    with patch("herd_mcp.tools.log._post_to_slack") as mock_post:
         mock_post.return_value = {"success": True, "response": {"ts": "123"}}
 
         result = await log.execute(
@@ -178,78 +186,58 @@ async def test_log_tool_fallback_without_adapter(in_memory_db):
 
 @pytest.mark.asyncio
 async def test_spawn_tool_uses_adapter():
-    """Test that spawn tool uses TicketAdapter when available."""
+    """Test that spawn tool _assemble_context_payload executes correctly."""
+    from pathlib import Path
 
-    # Create mock adapter
-    mock_tickets = AsyncMock()
-    mock_tickets.get = AsyncMock(
-        return_value={
-            "id": "123",
-            "identifier": "DBC-100",
-            "title": "Test ticket",
-            "description": "Test description",
-        }
-    )
+    from herd_mcp.tools.spawn import _assemble_context_payload
 
-    # registry variable intentionally unused - kept for documentation
-    _registry = AdapterRegistry(tickets=mock_tickets)  # noqa: F841
+    # _assemble_context_payload does not use linear_client or adapters directly.
+    # It builds a context string from file reads. Test that it runs without error.
+    with patch("herd_mcp.tools.spawn._read_file_safe", return_value=""):
+        payload = _assemble_context_payload(
+            ticket_id="DBC-100",
+            agent_code="mason",
+            model_code="claude-sonnet-4",
+            repo_root=Path("/tmp"),
+            worktree_path=Path("/tmp/worktree"),
+        )
 
-    # Mock the Linear client check
-    with (
-        patch("herd_mcp.tools.spawn.linear_client.is_linear_identifier", return_value=True),
-        patch("herd_mcp.tools.spawn._find_repo_root"),
-    ):
-        # Call the _assemble_context_payload helper directly to test adapter usage
-        from pathlib import Path
-
-        from herd_mcp.tools.spawn import _assemble_context_payload
-
-        # This function calls the adapter to get ticket details
-        with patch("herd_mcp.tools.spawn._read_file_safe", return_value=""):
-            # payload variable intentionally unused - testing that function executes
-            _payload = _assemble_context_payload(  # noqa: F841
-                ticket_id="DBC-100",
-                agent_code="mason",
-                model_code="claude-sonnet-4",
-                repo_root=Path("/tmp"),
-                worktree_path=Path("/tmp/worktree"),
-            )
-
-        # The payload should include ticket title and description
-        # Note: This is tested indirectly through the execute function
+    # Payload should be a non-empty string containing the agent identity
+    assert isinstance(payload, str)
+    assert "mason" in payload.lower() or "Mason" in payload
+    assert "DBC-100" in payload
 
 
 @pytest.mark.asyncio
-async def test_transition_tool_uses_adapter(in_memory_db):
+async def test_transition_tool_uses_adapter(mock_store):
     """Test that transition tool uses TicketAdapter when available."""
+    import asyncio
+
+    from herd_core.types import TicketRecord
     from herd_mcp.tools import transition
 
     # Create mock adapter
-    mock_tickets = AsyncMock()
-    mock_tickets.transition = AsyncMock()
+    mock_tickets = MagicMock()
+    mock_tickets.transition = MagicMock()
 
-    registry = AdapterRegistry(tickets=mock_tickets)
+    registry = AdapterRegistry(
+        store=mock_store,
+        tickets=mock_tickets,
+        write_lock=asyncio.Lock(),
+    )
 
-    # Insert test data
-    in_memory_db.execute(
-        """
-        INSERT INTO herd.ticket_def
-          (ticket_code, ticket_title, ticket_description, ticket_current_status,
-           created_at, modified_at)
-        VALUES ('DBC-100', 'Test', 'Description', 'backlog', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
-        """
+    # Seed test ticket in store
+    mock_store.save(
+        TicketRecord(
+            id="DBC-100",
+            title="Test",
+            description="Description",
+            status="backlog",
+        )
     )
 
     # Execute with registry
-    with (
-        patch("herd_mcp.tools.transition.connection", return_value=in_memory_db),
-        patch("herd_mcp.tools.transition.linear_client.is_linear_identifier", return_value=True),
-        patch("herd_mcp.tools.transition.get_manager") as mock_manager,
-    ):
-        mock_manager.return_value.trigger_refresh = AsyncMock(
-            return_value={"status": "ok"}
-        )
-
+    with patch("herd_mcp.linear_client.is_linear_identifier", return_value=True):
         result = await transition.execute(
             ticket_id="DBC-100",
             to_status="in_progress",

@@ -11,3 +11,6 @@ build/
 *.duckdb.wal
 .env
 .venv/
+data/
+.herd/herd.lance/
+.herd/sessions/

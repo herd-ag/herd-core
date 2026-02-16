@@ -3,16 +3,23 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from herd_mcp.db import connection
+from herd_core.types import (
+    AgentRecord,
+    DecisionRecord,
+    TicketEvent,
+)
 from herd_mcp.linear_client import search_issues
 
-from ._helpers import get_git_log, get_handoffs, get_recent_hdrs, read_status_md
+from ._helpers import get_git_log, read_status_md
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from herd_mcp.adapters import AdapterRegistry
@@ -20,8 +27,6 @@ if TYPE_CHECKING:
 # Backward-compatible aliases
 _read_status_md = read_status_md
 _get_git_log = get_git_log
-_get_handoffs = get_handoffs
-_get_recent_hdrs = get_recent_hdrs
 
 
 async def _get_linear_tickets(
@@ -63,7 +68,7 @@ def _get_slack_decisions_threads(
     Returns:
         List of thread summary dicts.
     """
-    token = os.getenv("HERD_SLACK_TOKEN")
+    token = os.getenv("HERD_NOTIFY_SLACK_TOKEN")
     if not token:
         return []
 
@@ -118,58 +123,58 @@ def _get_slack_decisions_threads(
         return []
 
 
-def _get_decision_records(agent_name: str, since: datetime) -> list[dict[str, Any]]:
-    """Get decision records from DuckDB since timestamp.
+def _get_decision_records(
+    store: Any,
+    agent_name: str,
+    since: datetime,
+) -> list[dict[str, Any]]:
+    """Get decision records from store since timestamp.
 
     Args:
+        store: StoreAdapter instance.
         agent_name: Agent name.
         since: Start timestamp.
 
     Returns:
         List of decision record dicts.
     """
-    with connection() as conn:
-        # NOTE: Complex aggregate query — StoreAdapter CRUD doesn't cover this.
-        # Kept as raw SQL. Future: ReportingAdapter or store.raw_query().
-        decisions = conn.execute(
-            """
-            SELECT
-                decision_id,
-                decision_type,
-                context,
-                decision,
-                rationale,
-                decided_by,
-                ticket_code,
-                created_at
-            FROM herd.decision_record
-            WHERE created_at >= ?
-              AND deleted_at IS NULL
-              AND (decided_by = ? OR ticket_code IN (
-                SELECT DISTINCT ticket_code
-                FROM herd.agent_instance
-                WHERE agent_code = ?
-                  AND ticket_code IS NOT NULL
-              ))
-            ORDER BY created_at DESC
-            LIMIT 20
-            """,
-            [str(since), agent_name, agent_name],
-        ).fetchall()
+    # Get all decision records since the cutoff
+    decisions = store.list(DecisionRecord, active=True)
 
-        return [
-            {
-                "decision_id": row[0],
-                "decision_type": row[1],
-                "context": row[2],
-                "decision": row[3],
-                "rationale": row[4],
-                "decided_by": row[5],
-                "ticket_code": row[6],
-                "created_at": str(row[7]),
-            }
-            for row in decisions
-        ]
+    # Also find which tickets this agent has worked on
+    agent_instances = store.list(AgentRecord, agent=agent_name)
+    agent_ticket_ids = {inst.ticket_id for inst in agent_instances if inst.ticket_id}
+
+    # Filter decisions relevant to this agent
+    relevant = []
+    for d in decisions:
+        # Check if created after cutoff
+        if d.created_at and d.created_at < since:
+            continue
+
+        # Check if this decision is by the agent or about a related ticket
+        is_by_agent = d.decision_maker == agent_name
+        is_related_ticket = d.scope and d.scope in agent_ticket_ids
+
+        if is_by_agent or is_related_ticket:
+            relevant.append(
+                {
+                    "decision_id": d.id,
+                    "decision_type": (
+                        d.title.split(":")[0] if ":" in d.title else "general"
+                    ),
+                    "context": "",
+                    "decision": d.title,
+                    "rationale": "",
+                    "decided_by": d.decision_maker,
+                    "ticket_code": d.scope,
+                    "created_at": str(d.created_at) if d.created_at else None,
+                }
+            )
+
+    # Sort by created_at desc and limit
+    relevant.sort(key=lambda x: x.get("created_at") or "", reverse=True)
+    return relevant[:20]
 
 
 async def execute(
@@ -181,11 +186,11 @@ async def execute(
     - STATUS.md contents (parsed)
     - Recent git log (since last session)
     - Linear ticket states (active, blocked, pending review)
-    - DuckDB activity (events, assignments, transitions)
-    - Pending handoffs
-    - Recent HDRs
+    - Store activity (events, assignments, transitions)
+    - Semantic memory recall (session summaries, decision context)
     - #herd-decisions threads (relevant to agent)
-    - Agent decision records from DuckDB
+    - Agent decision records from store
+    - Graph context (structural neighbors)
 
     Args:
         agent_name: Current agent identity.
@@ -200,6 +205,11 @@ async def execute(
             "summary": "No agent identity provided. Cannot retrieve catchup.",
         }
 
+    if not registry or not registry.store:
+        return {"error": "StoreAdapter not configured"}
+
+    store = registry.store
+
     # Find repository root
     repo_root = Path.cwd()
     while repo_root != repo_root.parent:
@@ -209,97 +219,176 @@ async def execute(
     else:
         repo_root = Path.cwd()
 
-    with connection() as conn:
-        # NOTE: Complex aggregate query — StoreAdapter CRUD doesn't cover this.
-        # Kept as raw SQL. Future: ReportingAdapter or store.raw_query().
+    # Find the most recent ENDED instance for this agent
+    all_instances = store.list(AgentRecord, agent=agent_name)
 
-        # Find the most recent ENDED instance for this agent
-        previous_instance = conn.execute(
-            """
-            SELECT agent_instance_code, agent_instance_ended_at
-            FROM herd.agent_instance
-            WHERE agent_code = ?
-              AND agent_instance_ended_at IS NOT NULL
-            ORDER BY agent_instance_ended_at DESC
-            LIMIT 1
-            """,
-            [agent_name],
-        ).fetchone()
+    # Filter to ended instances (state is COMPLETED, FAILED, or STOPPED) and sort by ended_at
+    ended_instances = [inst for inst in all_instances if inst.ended_at is not None]
+    ended_instances.sort(
+        key=lambda x: x.ended_at or datetime.min,
+        reverse=True,
+    )
 
-        if not previous_instance:
-            # First session - provide minimal context
-            status_md = _read_status_md(repo_root)
-            linear_tickets = await _get_linear_tickets(agent_name, registry)
+    if not ended_instances:
+        # First session - provide minimal context
+        status_md = _read_status_md(repo_root)
+        linear_tickets = await _get_linear_tickets(agent_name, registry)
 
-            return {
-                "since": None,
-                "summary": "No previous session found. You're starting fresh.",
-                "agent": agent_name,
-                "status_md": status_md,
-                "linear_tickets": linear_tickets,
-                "git_log": [],
-                "ticket_updates": [],
-                "handoffs": [],
-                "hdrs": [],
-                "slack_threads": [],
-                "decision_records": [],
-            }
+        # Enrich with semantic memory context (first session)
+        semantic_context = []
+        try:
+            from herd_mcp.memory import recall as semantic_recall
 
-        instance_code = previous_instance[0]
-        ended_at = previous_instance[1]
+            recent_memories = semantic_recall(
+                f"recent work and decisions relevant to {agent_name}",
+                limit=5,
+                memory_type="session_summary",
+            )
+            decision_memories = semantic_recall(
+                f"decisions and patterns relevant to {agent_name}",
+                limit=5,
+                memory_type="decision_context",
+            )
+            semantic_context = recent_memories + decision_memories
+        except ImportError:
+            pass  # LanceDB not available
+        except Exception:
+            logger.warning(
+                "Failed to fetch semantic context for catchup", exc_info=True
+            )
 
-        # Cap at 7 days of history
-        seven_days_ago = datetime.now() - timedelta(days=7)
-        cutoff = max(ended_at, seven_days_ago) if ended_at else seven_days_ago
+        # Graph enrichment: structural neighbors for this agent
+        graph_context: list[dict] = []
+        try:
+            from herd_mcp.graph import is_available, query_graph
 
-        # Get ticket updates since the last session (existing logic)
-        ticket_activity = conn.execute(
-            """
-            SELECT
-                ta.ticket_code,
-                ta.ticket_event_type,
-                ta.ticket_status,
-                ta.ticket_activity_comment,
-                ta.created_at,
-                ai.agent_code
-            FROM herd.agent_instance_ticket_activity ta
-            JOIN herd.agent_instance ai
-              ON ta.agent_instance_code = ai.agent_instance_code
-            WHERE ta.created_at >= ?
-              AND ta.ticket_code IN (
-                SELECT DISTINCT ticket_code
-                FROM herd.agent_instance
-                WHERE agent_code = ?
-                  AND ticket_code IS NOT NULL
-              )
-            ORDER BY ta.created_at ASC
-            LIMIT 100
-            """,
-            [str(cutoff), agent_name],
-        ).fetchall()
+            if is_available():
+                agent_graph = query_graph(
+                    "MATCH (a:Agent {id: $aid})-[r]->(n) "
+                    "RETURN type(r) AS rel, labels(n)[0] AS node_type, n.id AS id",
+                    {"aid": agent_name},
+                )
+                graph_context = agent_graph[:20]
+        except ImportError:
+            pass
+        except Exception:
+            logger.warning("Failed to enrich catchup with graph context", exc_info=True)
 
-        ticket_updates = []
-        for row in ticket_activity:
+        return {
+            "since": None,
+            "summary": "No previous session found. You're starting fresh.",
+            "agent": agent_name,
+            "status_md": status_md,
+            "linear_tickets": linear_tickets,
+            "git_log": [],
+            "ticket_updates": [],
+            "handoffs": [],  # Deprecated: context now via semantic recall
+            "hdrs": [],
+            "slack_threads": [],
+            "decision_records": [],
+            "semantic_context": semantic_context,
+            "graph_context": graph_context,
+        }
+
+    previous_instance = ended_instances[0]
+    instance_code = previous_instance.id
+    ended_at = previous_instance.ended_at
+
+    # Cap at 7 days of history
+    seven_days_ago = datetime.now() - timedelta(days=7)
+    cutoff = max(ended_at, seven_days_ago) if ended_at else seven_days_ago
+
+    # Get ticket updates since the last session via store events
+    # First, find which tickets this agent has worked on
+    agent_ticket_ids = {inst.ticket_id for inst in all_instances if inst.ticket_id}
+
+    ticket_updates = []
+    for ticket_id in agent_ticket_ids:
+        events = store.events(TicketEvent, entity_id=ticket_id, since=cutoff)
+        for event in events:
+            # Look up which agent this instance belongs to
+            agent_record = (
+                store.get(AgentRecord, event.instance_id) if event.instance_id else None
+            )
+            by_agent = agent_record.agent if agent_record else "unknown"
+
             ticket_updates.append(
                 {
-                    "ticket": row[0],
-                    "event_type": row[1],
-                    "status": row[2],
-                    "comment": row[3],
-                    "timestamp": str(row[4]),
-                    "by_agent": row[5],
+                    "ticket": ticket_id,
+                    "event_type": event.event_type,
+                    "status": event.new_status,
+                    "comment": event.note,
+                    "timestamp": str(event.created_at) if event.created_at else None,
+                    "by_agent": by_agent,
                 }
             )
+
+    # Sort ticket updates by timestamp
+    ticket_updates.sort(key=lambda x: x.get("timestamp") or "")
 
     # Gather all data sources
     status_md = _read_status_md(repo_root)
     repo_adapter = registry.repo if registry else None
     git_log = _get_git_log(repo_root, cutoff, repo_adapter)
     linear_tickets = await _get_linear_tickets(agent_name, registry)
-    handoffs = _get_handoffs(repo_root, cutoff)
-    hdrs = _get_recent_hdrs(repo_root, cutoff)
     slack_threads = _get_slack_decisions_threads(agent_name, cutoff)
-    decision_records = _get_decision_records(agent_name, cutoff)
+    decision_records = _get_decision_records(store, agent_name, cutoff)
+
+    # Enrich with semantic memory context using agent's actual work context
+    semantic_context = []
+    try:
+        from herd_mcp.memory import recall as semantic_recall
+
+        # Build targeted query from agent's actual ticket context
+        ticket_context = (
+            ", ".join(list(agent_ticket_ids)[:5]) if agent_ticket_ids else ""
+        )
+        session_query = (
+            f"work on {ticket_context}"
+            if ticket_context
+            else f"recent work by {agent_name}"
+        )
+        decision_query = (
+            f"decisions about {ticket_context}"
+            if ticket_context
+            else f"decisions relevant to {agent_name}"
+        )
+
+        # Get recent session summaries (cross-agent awareness)
+        recent_memories = semantic_recall(
+            session_query,
+            limit=5,
+            memory_type="session_summary",
+        )
+        # Get decision context that might be relevant
+        decision_memories = semantic_recall(
+            decision_query,
+            limit=5,
+            memory_type="decision_context",
+        )
+        semantic_context = recent_memories + decision_memories
+    except ImportError:
+        pass  # LanceDB not available
+    except Exception:
+        logger.warning("Failed to fetch semantic context for catchup", exc_info=True)
+
+    # Graph enrichment: structural neighbors of recently changed items
+    graph_context: list[dict] = []
+    try:
+        from herd_mcp.graph import is_available, query_graph
+
+        if is_available():
+            # Find decisions and tickets connected to this agent
+            agent_graph = query_graph(
+                "MATCH (a:Agent {id: $aid})-[r]->(n) "
+                "RETURN type(r) AS rel, labels(n)[0] AS node_type, n.id AS id",
+                {"aid": agent_name},
+            )
+            graph_context = agent_graph[:20]
+    except ImportError:
+        pass
+    except Exception:
+        logger.warning("Failed to enrich catchup with graph context", exc_info=True)
 
     # Build comprehensive summary
     summary_parts = []
@@ -323,14 +412,6 @@ async def execute(
             f"- {len(linear_tickets)} Linear ticket{'s' if len(linear_tickets) != 1 else ''} assigned"
         )
 
-    if handoffs:
-        summary_parts.append(
-            f"- {len(handoffs)} new handoff{'s' if len(handoffs) != 1 else ''}"
-        )
-
-    if hdrs:
-        summary_parts.append(f"- {len(hdrs)} new HDR{'s' if len(hdrs) != 1 else ''}")
-
     if slack_threads:
         summary_parts.append(
             f"- {len(slack_threads)} #herd-decisions thread{'s' if len(slack_threads) != 1 else ''}"
@@ -339,6 +420,14 @@ async def execute(
     if decision_records:
         summary_parts.append(
             f"- {len(decision_records)} agent decision{'s' if len(decision_records) != 1 else ''}"
+        )
+
+    if semantic_context:
+        summary_parts.append(f"- {len(semantic_context)} relevant semantic memories")
+
+    if graph_context:
+        summary_parts.append(
+            f"- {len(graph_context)} graph relationship{'s' if len(graph_context) != 1 else ''}"
         )
 
     if len(summary_parts) == 1:
@@ -355,8 +444,10 @@ async def execute(
         "git_log": git_log[:20],  # Last 20 commits
         "linear_tickets": linear_tickets,
         "ticket_updates": ticket_updates,
-        "handoffs": handoffs,
-        "hdrs": hdrs,
+        "handoffs": [],  # Deprecated: context now via semantic recall
+        "hdrs": [],  # Deprecated: HDR discovery via semantic recall instead
         "slack_threads": slack_threads,
         "decision_records": decision_records,
+        "semantic_context": semantic_context,
+        "graph_context": graph_context,
     }

@@ -2,268 +2,268 @@
 
 from __future__ import annotations
 
+import asyncio
 import tempfile
 from datetime import datetime, timedelta
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from herd_core.types import (
+    AgentRecord,
+    AgentState,
+    DecisionRecord,
+    TicketEvent,
+)
+from herd_mcp.adapters import AdapterRegistry
 from herd_mcp.tools import catchup
 
 
 @pytest.fixture
-def seeded_db(in_memory_db):
-    """Provide a database with test data for catchup tool."""
-    conn = in_memory_db
+def mock_registry(mock_store):
+    """Provide an AdapterRegistry with MockStore."""
+    return AdapterRegistry(store=mock_store, write_lock=asyncio.Lock())
 
-    # Insert test agents
-    conn.execute("""
-        INSERT INTO herd.agent_def
-          (agent_code, agent_role, agent_status, created_at)
-        VALUES
-          ('mason', 'backend', 'active', CURRENT_TIMESTAMP),
-          ('fresco', 'frontend', 'active', CURRENT_TIMESTAMP)
-        """)
+
+@pytest.fixture
+def seeded_store(mock_store):
+    """Provide a mock store seeded with test data for catchup tool.
+
+    Uses naive datetimes to match catchup tool's datetime.now() calls.
+    """
+    now = datetime.now()
+    yesterday = now - timedelta(days=1)
 
     # Insert previous ended instance for mason
-    yesterday = datetime.now() - timedelta(days=1)
-    conn.execute(
-        """
-        INSERT INTO herd.agent_instance
-          (agent_instance_code, agent_code, model_code, ticket_code,
-           agent_instance_started_at, agent_instance_ended_at, agent_instance_outcome)
-        VALUES
-          ('inst-mason-prev', 'mason', 'claude-sonnet-4', 'DBC-100', ?, ?, 'completed')
-        """,
-        [yesterday - timedelta(hours=2), yesterday],
+    mock_store.save(
+        AgentRecord(
+            id="inst-mason-prev",
+            agent="mason",
+            model="claude-sonnet-4",
+            ticket_id="DBC-100",
+            state=AgentState.COMPLETED,
+            started_at=yesterday - timedelta(hours=2),
+            ended_at=yesterday,
+        )
     )
 
     # Insert current instance for mason
-    conn.execute("""
-        INSERT INTO herd.agent_instance
-          (agent_instance_code, agent_code, model_code, ticket_code,
-           agent_instance_started_at)
-        VALUES
-          ('inst-mason-current', 'mason', 'claude-sonnet-4', 'DBC-100', CURRENT_TIMESTAMP)
-        """)
+    mock_store.save(
+        AgentRecord(
+            id="inst-mason-current",
+            agent="mason",
+            model="claude-sonnet-4",
+            ticket_id="DBC-100",
+            state=AgentState.RUNNING,
+            started_at=now,
+        )
+    )
 
-    # Insert ticket activity after previous session ended
-    conn.execute("""
-        INSERT INTO herd.agent_instance_ticket_activity
-          (agent_instance_code, ticket_code, ticket_event_type, ticket_status,
-           ticket_activity_comment, created_at)
-        VALUES
-          ('inst-mason-current', 'DBC-100', 'status_changed', 'in_review', 'Code reviewed', CURRENT_TIMESTAMP),
-          ('inst-mason-current', 'DBC-100', 'status_changed', 'merged', 'PR merged', CURRENT_TIMESTAMP)
-        """)
+    # Insert ticket events after previous session ended
+    mock_store.append(
+        TicketEvent(
+            entity_id="DBC-100",
+            event_type="status_changed",
+            instance_id="inst-mason-current",
+            previous_status="in_progress",
+            new_status="in_review",
+            note="Code reviewed",
+            created_at=now,
+        )
+    )
+    mock_store.append(
+        TicketEvent(
+            entity_id="DBC-100",
+            event_type="status_changed",
+            instance_id="inst-mason-current",
+            previous_status="in_review",
+            new_status="merged",
+            note="PR merged",
+            created_at=now,
+        )
+    )
 
-    yield conn
+    return mock_store
 
 
 @pytest.mark.asyncio
-async def test_catchup_with_previous_session(seeded_db):
+async def test_catchup_with_previous_session(seeded_store, mock_registry):
     """Test catchup with previous session and updates."""
-    with patch("herd_mcp.tools.catchup.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await catchup.execute(agent_name="mason", registry=mock_registry)
 
-        result = await catchup.execute(agent_name="mason")
-
-        assert result["since"] is not None
-        assert result["agent"] == "mason"
-        assert result["previous_instance"] == "inst-mason-prev"
-        assert len(result["ticket_updates"]) > 0
-        assert "updates across" in result["summary"]
+    assert result["since"] is not None
+    assert result["agent"] == "mason"
+    assert result["previous_instance"] == "inst-mason-prev"
+    assert len(result["ticket_updates"]) > 0
+    assert "updates across" in result["summary"]
 
 
 @pytest.mark.asyncio
-async def test_catchup_first_session(seeded_db):
+async def test_catchup_first_session(seeded_store, mock_registry):
     """Test catchup when no previous session exists."""
-    with patch("herd_mcp.tools.catchup.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await catchup.execute(agent_name="fresco", registry=mock_registry)
 
-        result = await catchup.execute(agent_name="fresco")
-
-        assert result["since"] is None
-        assert result["agent"] == "fresco"
-        assert len(result["ticket_updates"]) == 0
-        assert "No previous session found" in result["summary"]
-        assert "starting fresh" in result["summary"]
+    assert result["since"] is None
+    assert result["agent"] == "fresco"
+    assert len(result["ticket_updates"]) == 0
+    assert "No previous session found" in result["summary"]
+    assert "starting fresh" in result["summary"]
 
 
 @pytest.mark.asyncio
-async def test_catchup_no_updates(seeded_db):
+async def test_catchup_no_updates(seeded_store, mock_registry):
     """Test catchup when there are no updates since last session."""
-    # Create an ended instance with no subsequent activity
-    yesterday = datetime.now() - timedelta(days=1)
-    seeded_db.execute(
-        """
-        INSERT INTO herd.agent_instance
-          (agent_instance_code, agent_code, model_code, ticket_code,
-           agent_instance_started_at, agent_instance_ended_at, agent_instance_outcome)
-        VALUES
-          ('inst-fresco-prev', 'fresco', 'claude-opus-4', 'DBC-200', ?, ?, 'completed')
-        """,
-        [yesterday - timedelta(hours=2), yesterday],
+    now = datetime.now()
+    yesterday = now - timedelta(days=1)
+
+    # Create an ended instance for fresco with no subsequent activity
+    seeded_store.save(
+        AgentRecord(
+            id="inst-fresco-prev",
+            agent="fresco",
+            model="claude-opus-4",
+            ticket_id="DBC-200",
+            state=AgentState.COMPLETED,
+            started_at=yesterday - timedelta(hours=2),
+            ended_at=yesterday,
+        )
     )
 
-    with patch("herd_mcp.tools.catchup.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await catchup.execute(agent_name="fresco", registry=mock_registry)
 
-        result = await catchup.execute(agent_name="fresco")
-
-        assert result["since"] is not None
-        assert len(result["ticket_updates"]) == 0
-        # Enhanced catchup may show other activity (git commits, handoffs, etc)
-        # so we just check that the summary exists
-        assert "summary" in result
-        assert "Since" in result["summary"]
+    assert result["since"] is not None
+    assert len(result["ticket_updates"]) == 0
+    # Enhanced catchup may show other activity (git commits, handoffs, etc)
+    # so we just check that the summary exists
+    assert "summary" in result
+    assert "Since" in result["summary"]
 
 
 @pytest.mark.asyncio
-async def test_catchup_no_agent_name(seeded_db):
+async def test_catchup_no_agent_name(seeded_store, mock_registry):
     """Test catchup without agent name."""
-    with patch("herd_mcp.tools.catchup.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await catchup.execute(agent_name=None, registry=mock_registry)
 
-        result = await catchup.execute(agent_name=None)
-
-        assert result["since"] is None
-        assert "No agent identity provided" in result["summary"]
+    assert result["since"] is None
+    assert "No agent identity provided" in result["summary"]
 
 
 @pytest.mark.asyncio
-async def test_catchup_capped_history(seeded_db):
+async def test_catchup_capped_history(seeded_store, mock_registry):
     """Test that catchup history is capped at 7 days."""
+    now = datetime.now()
+    ten_days_ago = now - timedelta(days=10)
+    eight_days_ago = now - timedelta(days=8)
+
     # Create an ended instance from 10 days ago
-    ten_days_ago = datetime.now() - timedelta(days=10)
-    seeded_db.execute("""
-        INSERT INTO herd.agent_def
-          (agent_code, agent_role, agent_status, created_at)
-        VALUES ('old-agent', 'backend', 'active', CURRENT_TIMESTAMP)
-        """)
-
-    seeded_db.execute(
-        """
-        INSERT INTO herd.agent_instance
-          (agent_instance_code, agent_code, model_code, ticket_code,
-           agent_instance_started_at, agent_instance_ended_at, agent_instance_outcome)
-        VALUES
-          ('inst-old', 'old-agent', 'claude-sonnet-4', 'DBC-999', ?, ?, 'completed')
-        """,
-        [ten_days_ago - timedelta(hours=2), ten_days_ago],
+    seeded_store.save(
+        AgentRecord(
+            id="inst-old",
+            agent="old-agent",
+            model="claude-sonnet-4",
+            ticket_id="DBC-999",
+            state=AgentState.COMPLETED,
+            started_at=ten_days_ago - timedelta(hours=2),
+            ended_at=ten_days_ago,
+        )
     )
 
-    # Add activity from 8 days ago (should be filtered out)
-    eight_days_ago = datetime.now() - timedelta(days=8)
-    seeded_db.execute(
-        """
-        INSERT INTO herd.agent_instance_ticket_activity
-          (agent_instance_code, ticket_code, ticket_event_type, ticket_status,
-           ticket_activity_comment, created_at)
-        VALUES
-          ('inst-old', 'DBC-999', 'status_changed', 'done', 'Old activity', ?)
-        """,
-        [eight_days_ago],
+    # Add activity from 8 days ago (should be filtered out by 7-day cap)
+    seeded_store.append(
+        TicketEvent(
+            entity_id="DBC-999",
+            event_type="status_changed",
+            instance_id="inst-old",
+            previous_status="in_progress",
+            new_status="done",
+            note="Old activity",
+            created_at=eight_days_ago,
+        )
     )
 
-    with patch("herd_mcp.tools.catchup.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await catchup.execute(agent_name="old-agent", registry=mock_registry)
 
-        result = await catchup.execute(agent_name="old-agent")
-
-        # Should not include activity from >7 days ago
-        assert len(result["ticket_updates"]) == 0
+    # Should not include activity from >7 days ago
+    assert len(result["ticket_updates"]) == 0
 
 
 @pytest.mark.asyncio
-async def test_catchup_ticket_updates_format(seeded_db):
+async def test_catchup_ticket_updates_format(seeded_store, mock_registry):
     """Test that ticket updates are formatted correctly."""
-    with patch("herd_mcp.tools.catchup.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await catchup.execute(agent_name="mason", registry=mock_registry)
 
-        result = await catchup.execute(agent_name="mason")
-
-        if len(result["ticket_updates"]) > 0:
-            update = result["ticket_updates"][0]
-            assert "ticket" in update
-            assert "event_type" in update
-            assert "status" in update
-            assert "comment" in update
-            assert "timestamp" in update
-            assert "by_agent" in update
+    if len(result["ticket_updates"]) > 0:
+        update = result["ticket_updates"][0]
+        assert "ticket" in update
+        assert "event_type" in update
+        assert "status" in update
+        assert "comment" in update
+        assert "timestamp" in update
+        assert "by_agent" in update
 
 
 @pytest.mark.asyncio
-async def test_catchup_multiple_tickets(seeded_db):
+async def test_catchup_multiple_tickets(seeded_store, mock_registry):
     """Test catchup with updates across multiple tickets."""
-    # Add a second ticket with activity
-    seeded_db.execute("""
-        INSERT INTO herd.agent_instance
-          (agent_instance_code, agent_code, model_code, ticket_code,
-           agent_instance_started_at)
-        VALUES
-          ('inst-mason-ticket2', 'mason', 'claude-sonnet-4', 'DBC-101', CURRENT_TIMESTAMP)
-        """)
+    now = datetime.now()
 
-    seeded_db.execute("""
-        INSERT INTO herd.agent_instance_ticket_activity
-          (agent_instance_code, ticket_code, ticket_event_type, ticket_status,
-           ticket_activity_comment, created_at)
-        VALUES
-          ('inst-mason-ticket2', 'DBC-101', 'status_changed', 'assigned', 'New ticket', CURRENT_TIMESTAMP)
-        """)
+    # Add a second ticket with activity linked to mason
+    seeded_store.save(
+        AgentRecord(
+            id="inst-mason-ticket2",
+            agent="mason",
+            model="claude-sonnet-4",
+            ticket_id="DBC-101",
+            state=AgentState.RUNNING,
+            started_at=now,
+        )
+    )
 
-    with patch("herd_mcp.tools.catchup.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    seeded_store.append(
+        TicketEvent(
+            entity_id="DBC-101",
+            event_type="status_changed",
+            instance_id="inst-mason-ticket2",
+            previous_status="backlog",
+            new_status="assigned",
+            note="New ticket",
+            created_at=now,
+        )
+    )
 
-        result = await catchup.execute(agent_name="mason")
+    result = await catchup.execute(agent_name="mason", registry=mock_registry)
 
-        # Should include updates from both tickets
-        tickets = {u["ticket"] for u in result["ticket_updates"]}
-        assert len(tickets) > 0
-        assert "ticket" in result["summary"]
+    # Should include updates from both tickets
+    tickets = {u["ticket"] for u in result["ticket_updates"]}
+    assert len(tickets) > 0
+    assert "ticket" in result["summary"]
 
 
 @pytest.mark.asyncio
-async def test_catchup_summary_formatting(seeded_db):
+async def test_catchup_summary_formatting(seeded_store, mock_registry):
     """Test that summary is formatted correctly."""
-    with patch("herd_mcp.tools.catchup.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await catchup.execute(agent_name="mason", registry=mock_registry)
 
-        result = await catchup.execute(agent_name="mason")
-
-        summary = result["summary"]
-        # Should mention event count and ticket count
-        if len(result["ticket_updates"]) > 0:
-            assert "update" in summary.lower()
-            assert "ticket" in summary.lower()
+    summary = result["summary"]
+    # Should mention event count and ticket count
+    if len(result["ticket_updates"]) > 0:
+        assert "update" in summary.lower()
+        assert "ticket" in summary.lower()
 
 
 @pytest.mark.asyncio
-async def test_catchup_enhanced_fields(seeded_db):
+async def test_catchup_enhanced_fields(seeded_store, mock_registry):
     """Test that enhanced catchup includes all new data sources."""
-    with patch("herd_mcp.tools.catchup.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    result = await catchup.execute(agent_name="mason", registry=mock_registry)
 
-        result = await catchup.execute(agent_name="mason")
-
-        # Verify all new fields are present
-        assert "status_md" in result
-        assert "git_log" in result
-        assert "linear_tickets" in result
-        assert "handoffs" in result
-        assert "hdrs" in result
-        assert "slack_threads" in result
-        assert "decision_records" in result
+    # Verify all new fields are present
+    assert "status_md" in result
+    assert "git_log" in result
+    assert "linear_tickets" in result
+    assert "handoffs" in result
+    assert "hdrs" in result
+    assert "slack_threads" in result
+    assert "decision_records" in result
 
 
 @pytest.mark.asyncio
@@ -302,72 +302,62 @@ async def test_catchup_with_git_repo():
             capture_output=True,
         )
 
-        # Create a mock database
-        import duckdb
-        from herd_mcp import db as herd_db
+        # Create a mock store with test data
+        from tests.conftest import MockStore
 
-        conn = duckdb.connect(":memory:")
-        herd_db.init_schema(conn)
+        store = MockStore()
+        registry = AdapterRegistry(store=store, write_lock=asyncio.Lock())
 
-        # Insert test data
-        yesterday = datetime.now() - timedelta(days=1)
-        conn.execute("""
-            INSERT INTO herd.agent_def
-              (agent_code, agent_role, agent_status, created_at)
-            VALUES ('mason', 'backend', 'active', CURRENT_TIMESTAMP)
-        """)
+        now = datetime.now()
+        yesterday = now - timedelta(days=1)
 
-        conn.execute(
-            """
-            INSERT INTO herd.agent_instance
-              (agent_instance_code, agent_code, model_code, ticket_code,
-               agent_instance_started_at, agent_instance_ended_at, agent_instance_outcome)
-            VALUES ('inst-test', 'mason', 'claude-sonnet-4', 'DBC-100', ?, ?, 'completed')
-            """,
-            [yesterday - timedelta(hours=2), yesterday],
+        store.save(
+            AgentRecord(
+                id="inst-test",
+                agent="mason",
+                model="claude-sonnet-4",
+                ticket_id="DBC-100",
+                state=AgentState.COMPLETED,
+                started_at=yesterday - timedelta(hours=2),
+                ended_at=yesterday,
+            )
         )
 
-        with patch("herd_mcp.tools.catchup.connection") as mock_context:
-            mock_context.return_value.__enter__ = MagicMock(return_value=conn)
-            mock_context.return_value.__exit__ = MagicMock(return_value=None)
+        with patch("herd_mcp.tools.catchup.Path.cwd", return_value=repo_path):
+            result = await catchup.execute(agent_name="mason", registry=registry)
 
-            with patch("herd_mcp.tools.catchup.Path.cwd", return_value=repo_path):
-                result = await catchup.execute(agent_name="mason")
-
-                # Should have git log entries
-                assert "git_log" in result
-                assert isinstance(result["git_log"], list)
-                # Our test commit should be included
-                if result["git_log"]:
-                    assert result["git_log"][0]["message"] == "Test commit"
-
-        conn.close()
+            # Should have git log entries
+            assert "git_log" in result
+            assert isinstance(result["git_log"], list)
+            # Our test commit should be included
+            if result["git_log"]:
+                assert result["git_log"][0]["message"] == "Test commit"
 
 
 @pytest.mark.asyncio
-async def test_catchup_decision_records(seeded_db):
+async def test_catchup_decision_records(seeded_store, mock_registry):
     """Test that catchup includes decision records."""
-    # Add decision records to the database
-    seeded_db.execute("""
-        INSERT INTO herd.decision_record
-          (decision_id, decision_type, context, decision, rationale, decided_by,
-           ticket_code, created_at)
-        VALUES
-          ('dec-001', 'architectural', 'Need to choose DB', 'Use DuckDB',
-           'Fast and embedded', 'mason', 'DBC-100', CURRENT_TIMESTAMP)
-    """)
+    now = datetime.now()
 
-    with patch("herd_mcp.tools.catchup.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    # Add decision records to the store
+    seeded_store.save(
+        DecisionRecord(
+            id="dec-001",
+            title="architectural: Use DuckDB",
+            body="Fast and embedded",
+            decision_maker="mason",
+            scope="DBC-100",
+            created_at=now,
+        )
+    )
 
-        result = await catchup.execute(agent_name="mason")
+    result = await catchup.execute(agent_name="mason", registry=mock_registry)
 
-        # Should include the decision record
-        assert "decision_records" in result
-        assert isinstance(result["decision_records"], list)
-        if result["decision_records"]:
-            dec = result["decision_records"][0]
-            assert dec["decision_id"] == "dec-001"
-            assert dec["decision_type"] == "architectural"
-            assert dec["decided_by"] == "mason"
+    # Should include the decision record
+    assert "decision_records" in result
+    assert isinstance(result["decision_records"], list)
+    if result["decision_records"]:
+        dec = result["decision_records"][0]
+        assert dec["decision_id"] == "dec-001"
+        assert dec["decision_type"] == "architectural"
+        assert dec["decided_by"] == "mason"

@@ -2,109 +2,87 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
+from herd_core.types import DecisionRecord
+from herd_mcp.adapters import AdapterRegistry
 from herd_mcp.tools import record_decision
 
 
 @pytest.fixture
-def seeded_db(in_memory_db):
-    """Provide a database with test data for record_decision tool."""
-    conn = in_memory_db
-
-    # Insert test agent
-    conn.execute("""
-        INSERT INTO herd.agent_def
-          (agent_code, agent_role, agent_status, created_at)
-        VALUES ('mason', 'backend', 'active', CURRENT_TIMESTAMP)
-    """)
-
-    yield conn
+def mock_registry(mock_store):
+    """Create an AdapterRegistry with MockStore."""
+    return AdapterRegistry(store=mock_store, write_lock=asyncio.Lock())
 
 
 @pytest.mark.asyncio
-async def test_record_decision_success(seeded_db):
+async def test_record_decision_success(mock_store, mock_registry):
     """Test successful decision recording."""
-    with patch("herd_mcp.tools.record_decision.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    with patch(
+        "herd_mcp.tools.record_decision._post_to_slack_decisions"
+    ) as mock_slack:
+        mock_slack.return_value = {"success": True, "response": {"ok": True}}
 
-        with patch(
-            "herd_mcp.tools.record_decision._post_to_slack_decisions"
-        ) as mock_slack:
-            mock_slack.return_value = {"success": True, "response": {"ok": True}}
+        result = await record_decision.execute(
+            decision_type="architectural",
+            context="Need to choose a database",
+            decision="Use DuckDB for embedded analytics",
+            rationale="DuckDB is fast, embeddable, and requires no server",
+            alternatives_considered="PostgreSQL, SQLite, ClickHouse",
+            ticket_code="DBC-125",
+            agent_name="mason",
+            registry=mock_registry,
+        )
 
-            result = await record_decision.execute(
-                decision_type="architectural",
-                context="Need to choose a database",
-                decision="Use DuckDB for embedded analytics",
-                rationale="DuckDB is fast, embeddable, and requires no server",
-                alternatives_considered="PostgreSQL, SQLite, ClickHouse",
-                ticket_code="DBC-125",
-                agent_name="mason",
-            )
+        assert result["success"] is True
+        assert "decision_id" in result
+        assert result["agent"] == "mason"
+        assert result["ticket_code"] == "DBC-125"
+        assert result["posted_to_slack"] is True
 
-            assert result["success"] is True
-            assert "decision_id" in result
-            assert result["agent"] == "mason"
-            assert result["ticket_code"] == "DBC-125"
-            assert result["posted_to_slack"] is True
-
-    # Verify decision was written to database
-    decisions = seeded_db.execute("""
-        SELECT decision_id, decision_type, context, decision, rationale,
-               alternatives_considered, decided_by, ticket_code
-        FROM herd.decision_record
-        WHERE decided_by = 'mason'
-    """).fetchall()
-
+    # Verify decision was written to store
+    decisions = mock_store.list(DecisionRecord, decision_maker="mason")
     assert len(decisions) == 1
     dec = decisions[0]
-    assert dec[1] == "architectural"
-    assert dec[2] == "Need to choose a database"
-    assert dec[3] == "Use DuckDB for embedded analytics"
-    assert dec[4] == "DuckDB is fast, embeddable, and requires no server"
-    assert dec[5] == "PostgreSQL, SQLite, ClickHouse"
-    assert dec[6] == "mason"
-    assert dec[7] == "DBC-125"
+    assert "architectural" in dec.title
+    assert "Need to choose a database" in dec.body
+    assert "Use DuckDB for embedded analytics" in dec.body
+    assert "DuckDB is fast, embeddable, and requires no server" in dec.body
+    assert "PostgreSQL, SQLite, ClickHouse" in dec.body
+    assert dec.decision_maker == "mason"
+    assert dec.scope == "DBC-125"
 
 
 @pytest.mark.asyncio
-async def test_record_decision_no_alternatives(seeded_db):
+async def test_record_decision_no_alternatives(mock_store, mock_registry):
     """Test decision recording without alternatives considered."""
-    with patch("herd_mcp.tools.record_decision.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    with patch(
+        "herd_mcp.tools.record_decision._post_to_slack_decisions"
+    ) as mock_slack:
+        mock_slack.return_value = {"success": True}
 
-        with patch(
-            "herd_mcp.tools.record_decision._post_to_slack_decisions"
-        ) as mock_slack:
-            mock_slack.return_value = {"success": True}
+        result = await record_decision.execute(
+            decision_type="implementation",
+            context="How to structure API responses",
+            decision="Use consistent JSON envelope with data/errors fields",
+            rationale="Makes client error handling easier",
+            alternatives_considered=None,
+            ticket_code=None,
+            agent_name="mason",
+            registry=mock_registry,
+        )
 
-            result = await record_decision.execute(
-                decision_type="implementation",
-                context="How to structure API responses",
-                decision="Use consistent JSON envelope with data/errors fields",
-                rationale="Makes client error handling easier",
-                alternatives_considered=None,
-                ticket_code=None,
-                agent_name="mason",
-            )
-
-            assert result["success"] is True
-            assert result["ticket_code"] is None
+        assert result["success"] is True
+        assert result["ticket_code"] is None
 
     # Verify decision was written
-    decisions = seeded_db.execute("""
-        SELECT alternatives_considered, ticket_code
-        FROM herd.decision_record
-        WHERE decided_by = 'mason'
-    """).fetchall()
-
+    decisions = mock_store.list(DecisionRecord, decision_maker="mason")
     assert len(decisions) == 1
-    assert decisions[0][0] is None  # alternatives_considered
-    assert decisions[0][1] is None  # ticket_code
+    dec = decisions[0]
+    assert "Alternatives" not in dec.body  # No alternatives section
+    assert dec.scope is None  # ticket_code
 
 
 @pytest.mark.asyncio
@@ -125,45 +103,39 @@ async def test_record_decision_no_agent_name():
 
 
 @pytest.mark.asyncio
-async def test_record_decision_slack_failure(seeded_db):
+async def test_record_decision_slack_failure(mock_store, mock_registry):
     """Test decision recording continues even if Slack posting fails."""
-    with patch("herd_mcp.tools.record_decision.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    with patch(
+        "herd_mcp.tools.record_decision._post_to_slack_decisions"
+    ) as mock_slack:
+        mock_slack.return_value = {
+            "success": False,
+            "error": "HERD_SLACK_TOKEN not set",
+        }
 
-        with patch(
-            "herd_mcp.tools.record_decision._post_to_slack_decisions"
-        ) as mock_slack:
-            mock_slack.return_value = {
-                "success": False,
-                "error": "HERD_SLACK_TOKEN not set",
-            }
+        result = await record_decision.execute(
+            decision_type="pattern",
+            context="How to name variables",
+            decision="Use snake_case for Python",
+            rationale="PEP 8 standard",
+            alternatives_considered="camelCase",
+            ticket_code="DBC-125",
+            agent_name="mason",
+            registry=mock_registry,
+        )
 
-            result = await record_decision.execute(
-                decision_type="pattern",
-                context="How to name variables",
-                decision="Use snake_case for Python",
-                rationale="PEP 8 standard",
-                alternatives_considered="camelCase",
-                ticket_code="DBC-125",
-                agent_name="mason",
-            )
+        # Should still succeed in store even if Slack fails
+        assert result["success"] is True
+        assert result["posted_to_slack"] is False
+        assert "slack_response" in result
 
-            # Should still succeed in DB even if Slack fails
-            assert result["success"] is True
-            assert result["posted_to_slack"] is False
-            assert "slack_response" in result
-
-    # Verify decision was still written to database
-    decisions = seeded_db.execute("""
-        SELECT COUNT(*) FROM herd.decision_record WHERE decided_by = 'mason'
-    """).fetchone()
-
-    assert decisions[0] == 1
+    # Verify decision was still written to store
+    decisions = mock_store.list(DecisionRecord, decision_maker="mason")
+    assert len(decisions) == 1
 
 
 @pytest.mark.asyncio
-async def test_record_decision_types(seeded_db):
+async def test_record_decision_types(mock_store, mock_registry):
     """Test various decision types can be recorded."""
     decision_types = [
         "architectural",
@@ -173,38 +145,36 @@ async def test_record_decision_types(seeded_db):
         "technical",
     ]
 
-    with patch("herd_mcp.tools.record_decision.connection") as mock_context:
-        mock_context.return_value.__enter__ = MagicMock(return_value=seeded_db)
-        mock_context.return_value.__exit__ = MagicMock(return_value=None)
+    with patch(
+        "herd_mcp.tools.record_decision._post_to_slack_decisions"
+    ) as mock_slack:
+        mock_slack.return_value = {"success": True}
 
-        with patch(
-            "herd_mcp.tools.record_decision._post_to_slack_decisions"
-        ) as mock_slack:
-            mock_slack.return_value = {"success": True}
+        for dec_type in decision_types:
+            result = await record_decision.execute(
+                decision_type=dec_type,
+                context=f"Context for {dec_type}",
+                decision=f"Decision for {dec_type}",
+                rationale=f"Rationale for {dec_type}",
+                alternatives_considered=None,
+                ticket_code=None,
+                agent_name="mason",
+                registry=mock_registry,
+            )
 
-            for dec_type in decision_types:
-                result = await record_decision.execute(
-                    decision_type=dec_type,
-                    context=f"Context for {dec_type}",
-                    decision=f"Decision for {dec_type}",
-                    rationale=f"Rationale for {dec_type}",
-                    alternatives_considered=None,
-                    ticket_code=None,
-                    agent_name="mason",
-                )
-
-                assert result["success"] is True
+            assert result["success"] is True
 
     # Verify all decisions were written
-    decisions = seeded_db.execute("""
-        SELECT decision_type FROM herd.decision_record
-        WHERE decided_by = 'mason'
-        ORDER BY created_at
-    """).fetchall()
-
+    decisions = mock_store.list(DecisionRecord, decision_maker="mason")
     assert len(decisions) == len(decision_types)
-    for i, dec_type in enumerate(decision_types):
-        assert decisions[i][0] == dec_type
+    # Verify each type is present in the stored decisions
+    stored_types = set()
+    for dec in decisions:
+        # Title format is "decision_type: decision_text[:80]"
+        for dt in decision_types:
+            if dec.title.startswith(dt):
+                stored_types.add(dt)
+    assert stored_types == set(decision_types)
 
 
 @pytest.mark.asyncio
@@ -249,4 +219,4 @@ async def test_post_to_slack_decisions_no_token():
         )
 
         assert result["success"] is False
-        assert "HERD_SLACK_TOKEN not set" in result["error"]
+        assert "HERD_NOTIFY_SLACK_TOKEN not set" in result["error"]

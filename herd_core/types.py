@@ -25,6 +25,10 @@ class Entity:
     created_at: datetime | None = None
     modified_at: datetime | None = None
     deleted_at: datetime | None = None
+    org: str | None = None
+    team: str | None = None
+    repo: str | None = None
+    host: str | None = None
 
 
 @dataclass(frozen=True)
@@ -39,6 +43,10 @@ class Event:
     entity_id: str
     event_type: str
     created_at: datetime | None = None
+    org: str | None = None
+    team: str | None = None
+    repo: str | None = None
+    host: str | None = None
 
 
 # ============================================================

@@ -8,34 +8,32 @@ import pytest
 
 
 @pytest.mark.asyncio
-async def test_daemon_starts_rest_and_slack() -> None:
-    """Test daemon starts both REST API and Slack listener."""
+async def test_daemon_starts_mcp_and_slack() -> None:
+    """Test daemon starts MCP HTTP server and Slack listener."""
     with patch.dict(
         "os.environ",
         {
-            "HERD_SLACK_TOKEN": "xoxb-test",
-            "SLACK_APP_TOKEN": "xapp-test",
+            "HERD_NOTIFY_SLACK_TOKEN": "xoxb-test",
+            "HERD_NOTIFY_SLACK_APP_TOKEN": "xapp-test",
             "HERD_PROJECT_PATH": "/tmp/test",
         },
     ):
         with (
-            patch("herd_mcp.daemon.create_app") as mock_create_app,
+            patch("herd_mcp.daemon.create_http_app") as mock_create_app,
             patch("herd_mcp.daemon.SessionManager") as mock_session_mgr_class,
             patch("herd_mcp.daemon.SlackListener") as mock_slack_class,
-            patch("herd_mcp.daemon.web.AppRunner") as mock_runner_class,
+            patch("herd_mcp.daemon.uvicorn") as mock_uvicorn,
         ):
 
-            # Mock REST app and runner
+            # Mock MCP app
             mock_app = MagicMock()
             mock_create_app.return_value = mock_app
 
-            mock_runner = MagicMock()
-            mock_runner.setup = AsyncMock()
-            mock_runner.cleanup = AsyncMock()
-            mock_runner_class.return_value = mock_runner
-
-            mock_site = MagicMock()
-            mock_site.start = AsyncMock()
+            # Mock uvicorn server
+            mock_server = MagicMock()
+            mock_server.serve = AsyncMock(side_effect=KeyboardInterrupt())
+            mock_uvicorn.Config.return_value = MagicMock()
+            mock_uvicorn.Server.return_value = mock_server
 
             # Mock session manager
             mock_session_mgr = MagicMock()
@@ -52,23 +50,14 @@ async def test_daemon_starts_rest_and_slack() -> None:
             # Import after patching
             from herd_mcp.daemon import start_daemon
 
-            # Patch TCPSite and Event to avoid blocking
-            with (
-                patch("herd_mcp.daemon.web.TCPSite", return_value=mock_site),
-                patch("herd_mcp.daemon.asyncio.Event") as mock_event_class,
-            ):
-                # Make Event().wait() raise KeyboardInterrupt to exit loop
-                mock_event = MagicMock()
-                mock_event.wait = AsyncMock(side_effect=KeyboardInterrupt())
-                mock_event_class.return_value = mock_event
+            # Run daemon (will exit via KeyboardInterrupt from server.serve)
+            await start_daemon()
 
-                # Run daemon (will exit via KeyboardInterrupt)
-                await start_daemon()
-
-            # Verify REST API was started
+            # Verify MCP HTTP app was created
             mock_create_app.assert_called_once()
-            mock_runner.setup.assert_called_once()
-            mock_site.start.assert_called_once()
+            mock_uvicorn.Config.assert_called_once()
+            mock_uvicorn.Server.assert_called_once()
+            mock_server.serve.assert_called_once()
 
             # Verify session manager was started
             mock_session_mgr_class.assert_called_once_with("/tmp/test", 180)
@@ -83,7 +72,6 @@ async def test_daemon_starts_rest_and_slack() -> None:
             # Verify graceful shutdown
             mock_slack.stop.assert_called_once()
             mock_session_mgr.stop.assert_called_once()
-            mock_runner.cleanup.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -92,12 +80,12 @@ async def test_daemon_requires_slack_tokens() -> None:
     with patch.dict("os.environ", {}, clear=True):
         from herd_mcp.daemon import start_daemon
 
-        # Missing HERD_SLACK_TOKEN should exit
+        # Missing HERD_NOTIFY_SLACK_TOKEN should exit
         with pytest.raises(SystemExit):
             await start_daemon()
 
-    with patch.dict("os.environ", {"HERD_SLACK_TOKEN": "xoxb-test"}, clear=True):
-        # Missing SLACK_APP_TOKEN should exit
+    with patch.dict("os.environ", {"HERD_NOTIFY_SLACK_TOKEN": "xoxb-test"}, clear=True):
+        # Missing HERD_NOTIFY_SLACK_APP_TOKEN should exit
         with pytest.raises(SystemExit):
             await start_daemon()
 
@@ -108,8 +96,8 @@ async def test_daemon_uses_env_configuration() -> None:
     with patch.dict(
         "os.environ",
         {
-            "HERD_SLACK_TOKEN": "xoxb-test",
-            "SLACK_APP_TOKEN": "xapp-test",
+            "HERD_NOTIFY_SLACK_TOKEN": "xoxb-test",
+            "HERD_NOTIFY_SLACK_APP_TOKEN": "xapp-test",
             "HERD_API_HOST": "127.0.0.1",
             "HERD_API_PORT": "9999",
             "HERD_PROJECT_PATH": "/custom/path",
@@ -117,25 +105,20 @@ async def test_daemon_uses_env_configuration() -> None:
         },
     ):
         with (
-            patch("herd_mcp.daemon.create_app") as mock_create_app,
+            patch("herd_mcp.daemon.create_http_app") as mock_create_app,
             patch("herd_mcp.daemon.SessionManager") as mock_session_mgr_class,
             patch("herd_mcp.daemon.SlackListener") as mock_slack_class,
-            patch("herd_mcp.daemon.web.AppRunner") as mock_runner_class,
-            patch("herd_mcp.daemon.web.TCPSite") as mock_site_class,
+            patch("herd_mcp.daemon.uvicorn") as mock_uvicorn,
         ):
 
             # Mock all dependencies
             mock_app = MagicMock()
             mock_create_app.return_value = mock_app
 
-            mock_runner = MagicMock()
-            mock_runner.setup = AsyncMock()
-            mock_runner.cleanup = AsyncMock()
-            mock_runner_class.return_value = mock_runner
-
-            mock_site = MagicMock()
-            mock_site.start = AsyncMock()
-            mock_site_class.return_value = mock_site
+            mock_server = MagicMock()
+            mock_server.serve = AsyncMock(side_effect=KeyboardInterrupt())
+            mock_uvicorn.Config.return_value = MagicMock()
+            mock_uvicorn.Server.return_value = mock_server
 
             mock_session_mgr = MagicMock()
             mock_session_mgr.start = AsyncMock()
@@ -150,14 +133,10 @@ async def test_daemon_uses_env_configuration() -> None:
             # Import after patching
             from herd_mcp.daemon import start_daemon
 
-            # Make Event().wait() raise KeyboardInterrupt
-            with patch("herd_mcp.daemon.asyncio.Event") as mock_event_class:
-                mock_event = MagicMock()
-                mock_event.wait = AsyncMock(side_effect=KeyboardInterrupt())
-                mock_event_class.return_value = mock_event
-
-                await start_daemon()
+            await start_daemon()
 
             # Verify configuration was used
-            mock_site_class.assert_called_once_with(mock_runner, "127.0.0.1", 9999)
+            mock_uvicorn.Config.assert_called_once_with(
+                mock_app, host="127.0.0.1", port=9999, log_level="info"
+            )
             mock_session_mgr_class.assert_called_once_with("/custom/path", 300)

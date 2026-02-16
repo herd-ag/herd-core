@@ -73,7 +73,7 @@ herd-core/
       vigil.md
       rook.md
       gauss.md              # Inactive
-    decisions/              # Herd Decision Records (HDRs 0001-0027)
+    decisions/              # Herd Decision Records (HDRs 0001-0029)
     templates/              # Standardized templates for handoffs, reviews, etc.
     handoffs/               # Active work handoff files
     sessions/               # Session logs and intro markers
@@ -91,7 +91,7 @@ herd-core/
 | `.herd/STATUS.md` | Current state of all active work, blocks, and backlogs |
 | `.herd/craft.md` | Craft standards for each agent role (v0.5) |
 | `CLAUDE.md` | Project conventions, pre-commit checklist, design decisions |
-| `.herd/decisions/*.md` | Captured architectural decisions (HDRs 0001-0027) |
+| `.herd/decisions/*.md` | Captured architectural decisions (HDRs 0001-0029) |
 | `.env.example` | Environment variable template for secrets and config |
 | `pyproject.toml` | Package configuration, dependencies, build settings |
 

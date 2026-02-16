@@ -7,7 +7,8 @@ systems (Slack, Linear, Git, etc.) following the herd-core adapter protocols.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import asyncio
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -35,3 +36,4 @@ class AdapterRegistry:
     repo: RepoAdapter | None = None
     agent: AgentAdapter | None = None
     store: StoreAdapter | None = None
+    write_lock: asyncio.Lock = field(default_factory=asyncio.Lock)

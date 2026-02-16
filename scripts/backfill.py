@@ -11,7 +11,7 @@ All backfilled records use agent_instance_code = 'backfill-000' (zero-key patter
 The script is idempotent and can be safely re-run.
 
 Usage:
-    export LINEAR_API_KEY="lin_api_..."
+    export HERD_TICKET_LINEAR_API_KEY="lin_api_..."
     python backfill.py [--db-path path/to/herddb.duckdb]
 """
 
@@ -587,7 +587,7 @@ def main() -> None:
         "--db-path",
         type=str,
         default=None,
-        help="Path to DuckDB database file (defaults to HERD_DB_PATH env var or .herd/herddb.duckdb)",
+        help="Path to DuckDB database file (defaults to HERD_STORE_DUCKDB_PATH env var or .herd/herddb.duckdb)",
     )
     args = parser.parse_args()
 

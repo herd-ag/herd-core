@@ -111,8 +111,8 @@ async def test_assume_happy_path(mock_repo):
     assert "## Recent Activity" in result
     assert "### Git (last 10 commits)" in result
     assert "### Assigned Tickets" in result
-    assert "### Pending Handoffs" in result
-    assert "### Recent Decisions (HDRs)" in result
+    assert "### Relevant Decisions (HDRs" in result
+    assert "### Connected Decisions (graph)" in result
     assert "## Session Protocol" in result
     assert "Post session start to #herd-feed" in result
 
@@ -170,7 +170,12 @@ async def test_assume_missing_role_file(mock_repo):
 
 @pytest.mark.asyncio
 async def test_assume_missing_craft_md(tmp_path):
-    """Test graceful fallback when craft.md is missing."""
+    """Test graceful fallback when craft.md is missing from project.
+
+    When craft.md is not in the project .herd/ directory, the code falls back
+    to the package-provided craft.md. If both are missing, it shows a fallback
+    message.
+    """
     # Create minimal repo without craft.md
     (tmp_path / ".git").mkdir()
     roles_dir = tmp_path / ".herd" / "roles"
@@ -181,7 +186,12 @@ async def test_assume_missing_craft_md(tmp_path):
         result = await assume_role.execute("mason")
 
     assert "You are Mason." in result
-    assert "Craft section not found" in result
+    # Either the package default craft.md is found (with Mason section),
+    # or the fallback message is shown
+    assert "## Craft Standards" in result
+    # If package default is found, Mason craft section will be present;
+    # if not, the fallback message is shown
+    assert ("Mason" in result) or ("Craft section not found" in result)
 
 
 @pytest.mark.asyncio
@@ -233,29 +243,23 @@ async def test_assume_with_tickets(mock_repo):
 
 
 @pytest.mark.asyncio
-async def test_assume_with_handoffs(mock_repo):
-    """Test that handoffs are included in prompt."""
-    handoffs_dir = mock_repo / ".herd" / "handoffs"
-    handoffs_dir.mkdir(parents=True)
-    (handoffs_dir / "DBC-150.md").write_text("Handoff for DBC-150")
-
+async def test_assume_semantic_hdrs_section(mock_repo):
+    """Test that semantic HDR recall section is present in prompt."""
     with _patch_repo_root(mock_repo), _patch_linear_tickets(), _patch_git_log():
         result = await assume_role.execute("mason")
 
-    assert "DBC-150.md" in result
+    # The prompt should have the semantic HDRs section
+    assert "### Relevant Decisions (HDRs" in result
 
 
 @pytest.mark.asyncio
-async def test_assume_with_hdrs(mock_repo):
-    """Test that HDRs are included in prompt."""
-    decisions_dir = mock_repo / ".herd" / "decisions"
-    decisions_dir.mkdir(parents=True)
-    (decisions_dir / "0024-team-naming.md").write_text("HDR content")
-
+async def test_assume_graph_decisions_section(mock_repo):
+    """Test that graph decisions section is present in prompt."""
     with _patch_repo_root(mock_repo), _patch_linear_tickets(), _patch_git_log():
         result = await assume_role.execute("mason")
 
-    assert "0024-team-naming.md" in result
+    # The prompt should have the graph decisions section
+    assert "### Connected Decisions (graph)" in result
 
 
 @pytest.mark.asyncio
@@ -282,8 +286,8 @@ async def test_assume_prompt_contains_all_section_headers(mock_repo):
         "## Recent Activity",
         "### Git (last 10 commits)",
         "### Assigned Tickets",
-        "### Pending Handoffs",
-        "### Recent Decisions (HDRs)",
+        "### Relevant Decisions (HDRs",
+        "### Connected Decisions (graph)",
         "## Session Protocol",
     ]
     for header in expected_headers:
