@@ -1,0 +1,6 @@
+$8fb1aef9-9394-4f09-8eaf-37f8b6e820ff²Ëid ÿÿÿÿÿÿÿÿÿ*string08"project ÿÿÿÿÿÿÿÿÿ*string08repo ÿÿÿÿÿÿÿÿÿ*string08org ÿÿÿÿÿÿÿÿÿ*string08team ÿÿÿÿÿÿÿÿÿ*string08host ÿÿÿÿÿÿÿÿÿ*string08%
+session_id ÿÿÿÿÿÿÿÿÿ*string08 agent ÿÿÿÿÿÿÿÿÿ*string08&memory_type ÿÿÿÿÿÿÿÿÿ*string08"content	 ÿÿÿÿÿÿÿÿÿ*string08"summary
+ ÿÿÿÿÿÿÿÿÿ*string084vector ÿÿÿÿÿÿÿÿÿ*fixed_size_list:float:38408%
+created_at ÿÿÿÿÿÿÿÿÿ*string08#metadata ÿÿÿÿÿÿÿÿÿ*string08"'
+lance.auto_cleanup.older_than14days"!
+lance.auto_cleanup.interval20
