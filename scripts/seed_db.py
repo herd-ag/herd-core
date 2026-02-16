@@ -254,7 +254,7 @@ def seed_model_def(conn) -> None:
 def main() -> None:
     """Main entry point for database seeding."""
     # Use environment variable if set, otherwise use default
-    db_path = os.getenv("HERD_DB_PATH", ".herd/herddb.duckdb")
+    db_path = os.getenv("HERD_STORE_DUCKDB_PATH", ".herd/herddb.duckdb")
 
     print(f"Seeding Herd database: {db_path}")
     print("-" * 60)

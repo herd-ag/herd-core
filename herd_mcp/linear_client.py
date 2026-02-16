@@ -26,7 +26,7 @@ def _get_api_key() -> str | None:
     Returns:
         Linear API key if set, None otherwise.
     """
-    return os.getenv("LINEAR_API_KEY")
+    return os.getenv("HERD_TICKET_LINEAR_API_KEY")
 
 
 def _graphql_request(
@@ -46,7 +46,7 @@ def _graphql_request(
     """
     api_key = _get_api_key()
     if not api_key:
-        raise Exception("LINEAR_API_KEY environment variable not set")
+        raise Exception("HERD_TICKET_LINEAR_API_KEY environment variable not set")
 
     payload = {"query": query}
     if variables:

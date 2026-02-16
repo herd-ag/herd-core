@@ -47,7 +47,7 @@ class SlackListener:
         )
 
         # Configuration from environment
-        self.mao_channel_name = os.getenv("HERD_MAO_CHANNEL", "mao")
+        self.mao_channel_name = os.getenv("HERD_MANAGEMENT_CHANNEL", "mao")
         self.mao_channel_id: str | None = None
         self.authorized_users = self._parse_authorized_users()
         self.bot_user_id: str | None = None

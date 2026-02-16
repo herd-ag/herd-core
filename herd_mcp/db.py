@@ -20,7 +20,7 @@ def get_db_path() -> str:
     Returns:
         Database file path, or ":memory:" for in-memory database.
     """
-    return os.getenv("HERD_DB_PATH", ".herd/herddb.duckdb")
+    return os.getenv("HERD_STORE_DUCKDB_PATH", ".herd/herddb.duckdb")
 
 
 def get_connection(db_path: str | None = None) -> duckdb.DuckDBPyConnection:

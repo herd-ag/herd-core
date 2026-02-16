@@ -8,7 +8,6 @@ context assembly.
 from __future__ import annotations
 
 import logging
-import re
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -248,69 +247,3 @@ async def get_linear_tickets(
     except Exception:
         # Linear API may not be available
         return []
-
-
-def get_handoffs(repo_root: Path, since: datetime) -> list[dict[str, str]]:
-    """Get recent handoff files.
-
-    Args:
-        repo_root: Repository root path.
-        since: Start timestamp for filtering handoffs.
-
-    Returns:
-        List of handoff dicts with filename and modified time.
-    """
-    handoffs_dir = repo_root / ".herd" / "handoffs"
-    if not handoffs_dir.exists():
-        return []
-
-    handoffs = []
-    for handoff_file in handoffs_dir.glob("*.md"):
-        try:
-            mtime = datetime.fromtimestamp(handoff_file.stat().st_mtime)
-            if mtime >= since:
-                handoffs.append(
-                    {
-                        "filename": handoff_file.name,
-                        "modified": str(mtime),
-                        "ticket": handoff_file.stem,
-                    }
-                )
-        except Exception:
-            continue
-
-    return sorted(handoffs, key=lambda x: x["modified"], reverse=True)
-
-
-def get_recent_hdrs(repo_root: Path, since: datetime) -> list[dict[str, str]]:
-    """Get recent Herd Decision Records.
-
-    Args:
-        repo_root: Repository root path.
-        since: Start timestamp for filtering HDRs.
-
-    Returns:
-        List of HDR dicts with filename and modified time.
-    """
-    decisions_dir = repo_root / ".herd" / "decisions"
-    if not decisions_dir.exists():
-        return []
-
-    hdrs = []
-    for hdr_file in decisions_dir.glob("*.md"):
-        try:
-            mtime = datetime.fromtimestamp(hdr_file.stat().st_mtime)
-            if mtime >= since:
-                # Extract title from filename
-                title = re.sub(r"^\d+-", "", hdr_file.stem).replace("-", " ").title()
-                hdrs.append(
-                    {
-                        "filename": hdr_file.name,
-                        "modified": str(mtime),
-                        "title": title,
-                    }
-                )
-        except Exception:
-            continue
-
-    return sorted(hdrs, key=lambda x: x["modified"], reverse=True)
