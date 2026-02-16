@@ -23,6 +23,7 @@ from .tools import (
     assume_role,
     catchup,
     checkin,
+    create_ticket,
     graph,
     lifecycle,
     log,
@@ -625,6 +626,36 @@ async def herd_checkin(
     registry = get_adapter_registry()
     return await checkin.execute(
         status, agent_name, registry, bus=bus, checkin_registry=checkin_registry
+    )
+
+
+@mcp.tool()
+async def herd_create_ticket(
+    title: str,
+    description: str | None = None,
+    priority: str | None = None,
+    labels: list[str] | None = None,
+    agent_name: str | None = None,
+) -> dict:
+    """Create a new ticket in the project management system.
+
+    Creates a ticket via the TicketAdapter (e.g., Linear) and saves it to the
+    local store for tracking.
+
+    Args:
+        title: Ticket title (required).
+        description: Optional ticket description.
+        priority: Optional priority level - "none", "urgent", "high", "normal", or "low".
+        labels: Optional list of label IDs.
+        agent_name: Calling agent identity (falls back to HERD_AGENT_NAME).
+
+    Returns:
+        Dict with created ticket identifier and details.
+    """
+    agent_name = agent_name or get_agent_identity()
+    registry = get_adapter_registry()
+    return await create_ticket.execute(
+        title, description, priority, labels, agent_name, registry
     )
 
 
