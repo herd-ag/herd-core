@@ -79,7 +79,13 @@ if _github_client_id:
         auth_server_provider=_oauth_provider,
         auth=AuthSettings(
             issuer_url=_public_url,  # type: ignore[arg-type]
-            resource_server_url=f"{_public_url}/mcp",  # type: ignore[arg-type]
+            # resource_server_url intentionally None — server serves both
+            # internal (http://metropolis:8420) and public (https://herd-mcp.
+            # eriksen.live) clients. A static URL causes mismatch for one side.
+            # When None, /.well-known/oauth-protected-resource is not served,
+            # avoiding the mismatch. The real OAuth blocker is Cloudflare's
+            # "Block AI training bots" rule, not resource metadata.
+            resource_server_url=None,
             client_registration_options=ClientRegistrationOptions(
                 enabled=True,
                 valid_scopes=["herd:advisor"],
