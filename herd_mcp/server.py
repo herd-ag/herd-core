@@ -79,7 +79,7 @@ if _github_client_id:
         auth_server_provider=_oauth_provider,
         auth=AuthSettings(
             issuer_url=_public_url,  # type: ignore[arg-type]
-            resource_server_url=_public_url,  # type: ignore[arg-type]
+            resource_server_url=f"{_public_url}/mcp",  # type: ignore[arg-type]
             client_registration_options=ClientRegistrationOptions(
                 enabled=True,
                 valid_scopes=["herd:advisor"],
