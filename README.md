@@ -1,32 +1,113 @@
 # The Herd
 
-**Agent team governance framework.**
+A governance framework for AI agent teams.
 
-Execution-agnostic roles, authority models, decision capture, and craft
-standards for AI agent teams.
+Most multi-agent systems solve execution: spawn an agent, run a task, discard the context. The Herd solves everything above execution — roles, authority, quality gates, decision capture, long-term memory, and the ability to learn from its own process. It is organizational design applied to AI agents, informed by how effective human teams actually work.
 
 > Your agent framework runs the agents. The Herd runs the team.
 
-## Status
+## Why
 
-Alpha release (0.2.0). A functioning governance framework with MCP server,
-DuckDB-backed operational tracking, .env secret management, content path
-resolution, and typed adapter protocols. Eight agents. Thirteen MCP tools.
-Tests and CI in place.
+Agent frameworks give you functions that call functions. You get orchestration, tool routing, maybe a supervisor loop. What you don't get is a team.
 
-## Installation
+Real teams have structure. Someone decides scope. Someone else reviews quality — independently, not as a rubber stamp. Decisions get recorded so they're not relitigated. Knowledge accumulates across sessions. New members inherit context instead of starting blind. The team measures its own performance and adjusts.
 
-### Development (editable)
+None of this is execution. It's governance. And no agent framework provides it, because they're built around the assumption that agents are stateless workers to be dispatched and discarded.
 
-For active development or consuming projects that co-evolve with herd-core:
+The Herd rejects that assumption. Agents are team members with defined roles, bounded authority, persistent memory, and accountability. The framework provides the organizational substrate — who can do what, how work flows, how quality is enforced, and how the team gets better over time.
+
+## How It Works
+
+The Herd models real team structure. Nine agents occupy distinct roles:
+
+| Role | Agent | Responsibility |
+|------|-------|---------------|
+| Leader | **Steve** | Coordinates work, captures decisions, spawns agents. Never codes. |
+| Leader | **Leonardo** | Remote-host leader. Manages Metropolis team independently. |
+| Builder | **Mason** | Backend craft — code, tests, architecture implementation. |
+| Builder | **Fresco** | Frontend craft — UI, design systems, visual implementation. |
+| QA | **Wardenstein** | Independent quality review. Rejects PRs that fail standards. |
+| Docs | **Scribe** | Documentation — READMEs, guides, decision records. |
+| Security | **Vigil** | CI enforcement, security scanning, automated checks. |
+| Execution | **Rook** | Simple bounded tasks. Mechanical. No context pane. |
+| Data | **Tufte** | Dashboards, analytics, data visualization. |
+
+Roles carry authority boundaries. Leaders coordinate but never write code. QA reviews independently — it does not report to the leader whose work it reviews. Builders build within their assigned scope. These aren't suggestions; they're enforced constraints.
+
+Teams map to physical hosts the way real teams map to offices. Avalon (a MacBook) and Metropolis (a Linux server) each run their own leader and local agents. Cross-location coordination happens through an asynchronous message bus — not shared infrastructure, not synchronous calls. A leader on one host sends a directive to a leader on another, who manages their own team's execution. This is how distributed human teams actually work.
+
+## The Tristore
+
+No single database does everything well. The Herd uses three purpose-built stores behind a unified MCP interface:
+
+**DuckDB — operational and analytical store.** Every ticket, agent spawn, state transition, token count, estimated cost, and sprint metric is recorded as queryable dimensional data. This is the system of record for what happened and what it cost. Slice by project, agent, time period, skill version. Built on Data Vault 2.0 modeling with 87 dbt models (hubs, links, satellites, dimensions, facts). This is how the Herd measures itself.
+
+**LanceDB — semantic memory.** Decisions, session summaries, retrospectives, discovered patterns. Stored as vector embeddings, searchable by concept rather than keyword. An agent asking "what did we decide about authentication?" gets relevant decisions ranked by semantic similarity, not a SQL query that requires knowing the exact column value. This is how the Herd remembers.
+
+**KùzuDB — structural graph.** A property graph connecting tickets to decisions to components to deliveries. Which decisions affect which components. Which agents touched which code. Which QA results relate to which PRs. Graph traversal answers structural questions that neither relational queries nor vector search can: "show me everything downstream of this architectural decision." This is how the Herd reasons about context.
+
+### The compound value
+
+These stores are more powerful together than apart. A single `herd_assume` call — the operation that loads an agent's identity at session start — assembles full context from all three stores plus the filesystem:
+
+1. Role definition and craft standards (filesystem)
+2. Relevant architectural decisions (LanceDB, semantic search)
+3. Assigned tickets and current sprint state (DuckDB, operational query)
+4. Pending messages from other agents (DiskCache message bus)
+5. Related graph topology — decisions affecting assigned components (KùzuDB)
+
+Without MCP: 10+ manual operations across 5 systems. With MCP: one tool call.
+
+## MCP Tools
+
+Agents don't interact with stores directly. They call MCP tools and the server routes to the right store. The storage architecture is invisible to agents — they work through a clean tool interface.
+
+The MCP server also provides the cross-host message bus (DiskCache-backed, survives restarts), enabling multi-location coordination without shared infrastructure.
+
+### Tool inventory (20 tools)
+
+| Tool | Purpose |
+|------|---------|
+| `herd_assume` | Load agent identity with full tristore context |
+| `herd_checkin` | Heartbeat + read pending messages + context pane |
+| `herd_catchup` | Summary of activity since last session |
+| `herd_spawn` | Register new agent instances |
+| `herd_assign` | Assign tickets to agents |
+| `herd_transition` | Move tickets between states |
+| `herd_review` | Submit QA review findings |
+| `herd_create_ticket` | Create new tickets in Linear |
+| `herd_list_tickets` | Query tickets with filters |
+| `herd_log` | Post to Slack + log activity |
+| `herd_status` | Query agent status, sprint, blockers |
+| `herd_metrics` | Query operational metrics |
+| `herd_harvest_tokens` | Record token usage and costs |
+| `herd_record_decision` | Capture decision to DuckDB + LanceDB + Slack |
+| `herd_remember` | Store memory (session summary, pattern, retrospective) |
+| `herd_recall` | Semantic search over stored memories |
+| `herd_graph` | Query or mutate the KùzuDB structural graph |
+| `herd_send` | Send message to another agent (async bus) |
+| `herd_decommission` | Permanently decommission agent |
+| `herd_standdown` | Temporarily stand down agent |
+
+## Feedback Loops
+
+The Herd doesn't just execute — it learns how it executes best.
+
+Agents file retrospectives when they encounter friction, skill gaps, or discover patterns worth preserving. Leaders synthesize these into session reports stored as semantic memory. Over time, retrospective data tunes the system: which skills to load per task type, which context to recall per ticket category, which spawn patterns produce the least rework.
+
+Every token spent, every QA rejection, every blocked ticket is recorded as dimensional data in DuckDB. The analytical layer (dbt models, Evidence.dev dashboards) surfaces trends — cost per agent, rework rate, velocity by sprint. The team measures itself with the same rigor it applies to the code it produces.
+
+## Getting Started
+
+### Installation
+
+**Development (editable):**
 
 ```bash
 pip install -e "/path/to/herd-core[adapters,env]"
 ```
 
-### Stable (pinned to release tag)
-
-For projects that need a reproducible install:
+**Stable (pinned to release):**
 
 ```bash
 pip install "herd-core[adapters] @ git+https://github.com/herd-ag/herd-core@v0.2.0"
@@ -47,29 +128,17 @@ Optional extras:
 
 | Extra | Packages |
 |-------|----------|
-| `env` | `python-dotenv>=1.0` -- loads `.env` files automatically |
-| `dev` | `pytest`, `ruff`, `black`, `mypy` -- development tooling |
+| `env` | `python-dotenv>=1.0` — loads `.env` files automatically |
+| `dev` | `pytest`, `ruff`, `black`, `mypy` — development tooling |
 | `adapters` | All five adapter packages (store, agent, ticket, repo, notify) |
 
-## What is The Herd?
-
-The Herd is a governance framework for AI agent teams. Most agent frameworks
-handle execution -- spawning agents, routing messages, managing tool calls.
-The Herd handles everything above that: who can do what, how quality is
-enforced, how decisions are captured, and how the team operates as a unit.
-
-It is execution-agnostic. Bring your own agent engine (Claude Code, Codex,
-CrewAI, or anything else) and plug it in through a typed adapter protocol.
-
-## Environment Setup
+### Environment
 
 Copy `.env.example` to `.env` and fill in your values:
 
 ```bash
 cp .env.example .env
 ```
-
-Required variables:
 
 | Variable | Description |
 |----------|-------------|
@@ -78,17 +147,9 @@ Required variables:
 | `HERD_AGENT_NAME` | Agent identity code (e.g., `mason`, `steve`) |
 | `HERD_DB_PATH` | Database path (default: `.herd/herddb.duckdb`) |
 
-The `.env` file is gitignored and never committed. When `python-dotenv` is
-installed (via the `env` extra), values are loaded automatically at server
-startup.
+The `.env` file is gitignored and never committed.
 
-## MCP Server
-
-The Herd MCP Server provides 13 tools for operational tracking and team
-coordination. Agents interact through MCP tool calls; the server records
-all activity to DuckDB and optionally posts to Slack.
-
-### Configuration
+### MCP Server Configuration
 
 Add to your `.mcp.json`:
 
@@ -107,71 +168,15 @@ Add to your `.mcp.json`:
 }
 ```
 
-### Run Modes
+Run modes:
 
 | Command | Mode |
 |---------|------|
-| `python -m herd_mcp` | MCP stdio server (default) |
-| `python -m herd_mcp serve` | REST API server |
-| `python -m herd_mcp slack` | Daemon with REST API + Slack Socket Mode |
+| `python -m herd_mcp` | Streamable HTTP server (default) |
+| `python -m herd_mcp --stdio` | Stdio mode (debugging) |
+| `python -m herd_mcp slack` | Daemon with Slack Socket Mode |
 
-### Tools
-
-| Tool | Purpose |
-|------|---------|
-| `herd_log` | Post to Slack + log activity |
-| `herd_status` | Query agent status, sprint, blockers |
-| `herd_spawn` | Register new agent instances |
-| `herd_assign` | Assign tickets to agents |
-| `herd_transition` | Move tickets between states |
-| `herd_review` | Submit QA review findings |
-| `herd_metrics` | Query operational metrics |
-| `herd_catchup` | Summary of recent activity |
-| `herd_decommission` | Permanently decommission agent |
-| `herd_standdown` | Temporarily stand down agent |
-| `herd_harvest_tokens` | Record token usage and costs |
-| `herd_record_decision` | Record agent decision to DuckDB + Slack |
-| `herd_assume` | Load agent identity with full context |
-
-See `.herd/docs/mcp-server.md` for the full tool reference.
-
-## Architecture
-
-The Herd uses a **protocol-based adapter design** with five capability
-boundaries. Each adapter is a `@runtime_checkable` Protocol (PEP 544),
-so implementations use structural subtyping -- no inheritance required.
-
-The type system has two hierarchies:
-
-- **Entity** -- mutable domain records with identity, timestamps, and soft
-  deletes. Persisted via `StoreAdapter.save()`, retrieved via `.get()` and
-  `.list()`.
-- **Event** -- immutable, append-only audit trail records. Written once via
-  `StoreAdapter.append()`, never updated or deleted.
-
-### Content Path Resolution
-
-`get_herd_content_path()` resolves `.herd/` content with a two-step fallback:
-
-1. **Project root** `.herd/` -- project-specific overrides
-2. **Package root** `.herd/` -- canonical defaults from herd-core install
-
-This means consuming projects can override any role file, craft standard, or
-template by placing their own version in their `.herd/` directory. A bare
-`pip install` gives working defaults out of the box.
-
-### Packages
-
-| Package | Purpose | Adapter |
-|---------|---------|---------|
-| `herd-core` | Framework interfaces, types, config, queries, MCP server | -- |
-| `herd-store-duckdb` | DuckDB/MotherDuck persistence + dbt schema + Evidence dashboards | StoreAdapter |
-| `herd-agent-claude` | Claude Code CLI execution | AgentAdapter |
-| `herd-ticket-linear` | Linear.app ticket lifecycle | TicketAdapter |
-| `herd-repo-github` | GitHub PRs, branches, commits | RepoAdapter |
-| `herd-notify-slack` | Slack messaging | NotifyAdapter |
-
-## Quick Start
+### Quick Start
 
 ```python
 from herd_core import (
@@ -223,25 +228,26 @@ def run_queries(store: StoreAdapter) -> None:
     blocked = queries.blocked_tickets()
 ```
 
-## Type Inventory
+## Architecture
 
-All 29 public exports from `herd_core`:
+### Execution-agnostic by design
 
-| Category | Types |
-|----------|-------|
-| Entities (7) | `AgentRecord`, `TicketRecord`, `PRRecord`, `DecisionRecord`, `ReviewRecord`, `ModelRecord`, `SprintRecord` |
-| Events (5) | `LifecycleEvent`, `TicketEvent`, `PREvent`, `ReviewEvent`, `TokenEvent` |
-| Enums (2) | `AgentState`, `TicketPriority` |
-| Base classes (2) | `Entity`, `Event` |
-| Return types (6) | `SpawnContext`, `SpawnResult`, `TransitionResult`, `PostResult`, `ThreadMessage`, `CommitInfo` |
-| Config (1) | `HerdConfig` (with `TicketConfig`, `NotifyConfig`, `AgentConfig`, `StoreConfig`, `RepoConfig`) |
-| Protocols (5) | `StoreAdapter`, `AgentAdapter`, `TicketAdapter`, `RepoAdapter`, `NotifyAdapter` |
-| Queries (1) | `OperationalQueries` |
+The Herd doesn't run agents. It governs them. Bring Claude Code, Codex, CrewAI, or anything else — plug in through typed adapter protocols (PEP 544 structural subtyping). The governance layer is independent of the execution engine.
 
-## Adapter Protocol Example
+Five adapter protocols define the capability boundaries:
 
-Adapters implement the protocol structurally -- no base class needed.
-Here is a minimal `StoreAdapter` skeleton:
+| Package | Purpose | Adapter |
+|---------|---------|---------|
+| `herd-core` | Framework interfaces, types, config, queries, MCP server | — |
+| `herd-store-duckdb` | DuckDB/MotherDuck persistence + dbt schema + Evidence dashboards | `StoreAdapter` |
+| `herd-agent-claude` | Claude Code CLI execution | `AgentAdapter` |
+| `herd-ticket-linear` | Linear.app ticket lifecycle | `TicketAdapter` |
+| `herd-repo-github` | GitHub PRs, branches, commits | `RepoAdapter` |
+| `herd-notify-slack` | Slack messaging | `NotifyAdapter` |
+
+Each adapter is a `@runtime_checkable` Protocol — implementations use structural subtyping, no inheritance required. Swap DuckDB for Postgres, Linear for Jira, Slack for Discord. The governance framework doesn't change.
+
+### Adapter protocol example
 
 ```python
 from __future__ import annotations
@@ -282,9 +288,37 @@ class MyStore:
 assert isinstance(MyStore(), StoreAdapter)
 ```
 
-All five adapter protocols follow this pattern. See
-[`herd_core/adapters/`](herd_core/adapters/) for the full protocol
-definitions.
+All five protocols follow this pattern. See [`herd_core/adapters/`](herd_core/adapters/) for the full definitions.
+
+### Content path resolution
+
+`get_herd_content_path()` resolves `.herd/` content with a two-step fallback:
+
+1. **Project root** `.herd/` — project-specific overrides
+2. **Package root** `.herd/` — canonical defaults from herd-core install
+
+Consuming projects can override any role file, craft standard, or template by placing their own version in their `.herd/` directory.
+
+### Type inventory
+
+All 29 public exports from `herd_core`:
+
+| Category | Types |
+|----------|-------|
+| Entities (7) | `AgentRecord`, `TicketRecord`, `PRRecord`, `DecisionRecord`, `ReviewRecord`, `ModelRecord`, `SprintRecord` |
+| Events (5) | `LifecycleEvent`, `TicketEvent`, `PREvent`, `ReviewEvent`, `TokenEvent` |
+| Enums (2) | `AgentState`, `TicketPriority` |
+| Base classes (2) | `Entity`, `Event` |
+| Return types (6) | `SpawnContext`, `SpawnResult`, `TransitionResult`, `PostResult`, `ThreadMessage`, `CommitInfo` |
+| Config (1) | `HerdConfig` (with `TicketConfig`, `NotifyConfig`, `AgentConfig`, `StoreConfig`, `RepoConfig`) |
+| Protocols (5) | `StoreAdapter`, `AgentAdapter`, `TicketAdapter`, `RepoAdapter`, `NotifyAdapter` |
+| Queries (1) | `OperationalQueries` |
+
+## Status & Roadmap
+
+**Current:** v0.2.0 (alpha). Nine agents. Twenty MCP tools. Tristore architecture operational. DuckDB analytics with 87 dbt models. Evidence.dev dashboards. DiskCache-backed persistent message bus. CI and QA gates enforced.
+
+**What's coming:** GitBook documentation site. MotherDuck cloud sync for cross-host analytics. Expanded retrospective-driven tuning. Additional adapter implementations.
 
 ## Version History
 
@@ -292,7 +326,7 @@ definitions.
 |---------|------|---------|
 | 0.2.0 | 2026-02-15 | MCP server, .env support, content path resolution, roster rename (HDR-0024) |
 | 0.1.0 | 2026-02-13 | Fixture rename, Vigil CI, helper/assume_role ports, role/HDR sync |
-| 0.0.1 | 2026-02-11 | Initial release -- type system, adapter protocols, config, queries |
+| 0.0.1 | 2026-02-11 | Initial release — type system, adapter protocols, config, queries |
 
 ## License
 
