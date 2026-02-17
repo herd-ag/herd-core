@@ -149,6 +149,37 @@ def test_extract_agent_code_from_branch():
     assert backfill.extract_agent_code_from_branch("main") is None
 
 
+def test_extract_agent_code_from_commit_prefix():
+    """Test agent code extraction from commit subject prefix."""
+    assert (
+        backfill.extract_agent_code_from_commit_prefix("[mason] fix: something")
+        == "mason"
+    )
+    assert (
+        backfill.extract_agent_code_from_commit_prefix("[steve] feat: something")
+        == "steve"
+    )
+    assert (
+        backfill.extract_agent_code_from_commit_prefix("[wardenstein] review: qa pass")
+        == "wardenstein"
+    )
+    # Unknown agent
+    assert (
+        backfill.extract_agent_code_from_commit_prefix("[unknown] fix: something")
+        is None
+    )
+    # No prefix
+    assert (
+        backfill.extract_agent_code_from_commit_prefix("Merge pull request #5") is None
+    )
+
+
+def test_repo_short_name():
+    """Test repo short name extraction."""
+    assert backfill.repo_short_name("herd-ag/herd-core") == "herd-core"
+    assert backfill.repo_short_name("herd-ag/herd-store-duckdb") == "herd-store-duckdb"
+
+
 def test_parse_iso_timestamp():
     """Test ISO timestamp parsing."""
     dt = backfill.parse_iso_timestamp("2024-01-15T10:30:00Z")
@@ -249,18 +280,19 @@ def test_upsert_tickets(mock_linear_tickets):
 
 
 def test_upsert_prs(mock_github_prs):
-    """Test PR upsert logic."""
+    """Test PR upsert logic with repo-prefixed PR codes."""
     conn = db.get_connection(":memory:")
+    repo = "herd-ag/herd-core"
 
     # First upsert (inserts)
-    backfill.upsert_prs(conn, mock_github_prs)
+    backfill.upsert_prs(conn, repo, mock_github_prs)
 
     result = conn.execute("SELECT COUNT(*) FROM herd.pr_def").fetchone()
     assert result[0] == 2
 
-    # Verify data
+    # Verify data (PR codes are now repo-prefixed)
     pr = conn.execute(
-        "SELECT * FROM herd.pr_def WHERE pr_code = ?", ["PR-100"]
+        "SELECT * FROM herd.pr_def WHERE pr_code = ?", ["herd-core/PR-100"]
     ).fetchone()
     assert pr is not None
     # pr_code, ticket_code, creator_agent_instance_code, pr_branch_name, pr_title, ...
@@ -274,7 +306,7 @@ def test_upsert_prs(mock_github_prs):
     # Second upsert (updates)
     modified_prs = mock_github_prs.copy()
     modified_prs[0]["title"] = "Updated PR title"
-    backfill.upsert_prs(conn, modified_prs)
+    backfill.upsert_prs(conn, repo, modified_prs)
 
     # Still 2 PRs
     result = conn.execute("SELECT COUNT(*) FROM herd.pr_def").fetchone()
@@ -282,7 +314,7 @@ def test_upsert_prs(mock_github_prs):
 
     # Verify update
     pr = conn.execute(
-        "SELECT pr_title FROM herd.pr_def WHERE pr_code = ?", ["PR-100"]
+        "SELECT pr_title FROM herd.pr_def WHERE pr_code = ?", ["herd-core/PR-100"]
     ).fetchone()
     assert pr[0] == "Updated PR title"
 
@@ -290,11 +322,13 @@ def test_upsert_prs(mock_github_prs):
 
 
 def test_insert_pr_commits(mock_commits):
-    """Test PR commit insertion."""
+    """Test PR commit insertion with repo parameter."""
     conn = db.get_connection(":memory:")
+    repo = "herd-ag/herd-core"
+    pr_code = "herd-core/PR-100"
 
     with patch("backfill.fetch_pr_commits", return_value=mock_commits):
-        backfill.insert_pr_commits(conn, 100, "PR-100", "herd/mason/dbc-1")
+        backfill.insert_pr_commits(conn, repo, 100, pr_code)
 
     result = conn.execute(
         "SELECT COUNT(*) FROM herd.agent_instance_pr_activity"
@@ -309,19 +343,67 @@ def test_insert_pr_commits(mock_commits):
     assert commit is not None
     # agent_instance_code, pr_code, pr_event_type, pr_commit_hash, ...
     assert commit[0] == backfill.BACKFILL_AGENT_INSTANCE_CODE
-    assert commit[1] == "PR-100"
+    assert commit[1] == pr_code
     assert commit[2] == "commit"
     assert commit[3] == "abc123"
 
     # Test idempotency - re-insert same commits
     with patch("backfill.fetch_pr_commits", return_value=mock_commits):
-        backfill.insert_pr_commits(conn, 100, "PR-100", "herd/mason/dbc-1")
+        backfill.insert_pr_commits(conn, repo, 100, pr_code)
 
     # Still only 2 commits
     result = conn.execute(
         "SELECT COUNT(*) FROM herd.agent_instance_pr_activity"
     ).fetchone()
     assert result[0] == 2
+
+    conn.close()
+
+
+def test_ensure_stg_git_commit_table():
+    """Test stg_git_commit table creation."""
+    conn = db.get_connection(":memory:")
+
+    # Table should not exist yet
+    tables = conn.execute(
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_schema = 'herd' AND table_name = 'stg_git_commit'"
+    ).fetchall()
+    assert len(tables) == 0
+
+    # Create table
+    backfill.ensure_stg_git_commit_table(conn)
+
+    # Table should exist now
+    tables = conn.execute(
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_schema = 'herd' AND table_name = 'stg_git_commit'"
+    ).fetchall()
+    assert len(tables) == 1
+
+    # Calling again is idempotent (CREATE IF NOT EXISTS)
+    backfill.ensure_stg_git_commit_table(conn)
+
+    conn.close()
+
+
+def test_backfill_git_log_missing_repos():
+    """Test git log backfill when repos are missing."""
+    conn = db.get_connection(":memory:")
+
+    # Patch HERD_REPOS to use non-existent paths
+    with patch.object(backfill, "HERD_REPOS", ["herd-ag/nonexistent-repo"]):
+        inserted = backfill.backfill_git_log(conn)
+
+    # No commits inserted (repo doesn't exist)
+    assert inserted == 0
+
+    # Table was still created
+    tables = conn.execute(
+        "SELECT table_name FROM information_schema.tables "
+        "WHERE table_schema = 'herd' AND table_name = 'stg_git_commit'"
+    ).fetchall()
+    assert len(tables) == 1
 
     conn.close()
 
@@ -378,6 +460,7 @@ def test_main_integration(
     mock_fetch_prs.return_value = mock_github_prs
 
     conn = db.get_connection(":memory:")
+    repo = "herd-ag/herd-core"
 
     # Manually run the main logic (avoiding argparse and sys.exit)
     backfill.ensure_backfill_agent_instance(conn)
@@ -387,7 +470,7 @@ def test_main_integration(
 
     backfill.upsert_projects(conn, projects)
     backfill.upsert_tickets(conn, tickets)
-    backfill.upsert_prs(conn, prs)
+    backfill.upsert_prs(conn, repo, prs)
 
     # Verify all data loaded
     project_count = conn.execute("SELECT COUNT(*) FROM herd.project_def").fetchone()[0]

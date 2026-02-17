@@ -10,11 +10,6 @@ Idempotent: Safe to run multiple times without creating duplicates.
 from __future__ import annotations
 
 import os
-import sys
-from pathlib import Path
-
-# Add src to path so we can import herd_mcp
-sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from herd_mcp.db import connection
 
@@ -74,6 +69,14 @@ def seed_agent_def(conn) -> None:
             "agent_branch_prefix": "herd/scribe",
             "agent_email": "scribe@herd.local",
             "default_model_code": "claude-opus-4-6",
+        },
+        {
+            "agent_code": "tufte",
+            "agent_role": "data-viz",
+            "agent_status": "active",
+            "agent_branch_prefix": "herd/tufte",
+            "agent_email": "tufte@herd.local",
+            "default_model_code": "claude-sonnet-4-5",
         },
         {
             "agent_code": "vigil",

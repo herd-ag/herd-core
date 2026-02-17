@@ -239,8 +239,8 @@ class TestSeedScript:
         # Counts should be the same (no duplicates)
         assert count1 == count2
         assert (
-            count1 == 8
-        )  # steve, leonardo, mason, fresco, wardenstein, scribe, vigil, rook
+            count1 == 9
+        )  # steve, leonardo, mason, fresco, wardenstein, scribe, tufte, vigil, rook
 
     def test_seed_script_is_idempotent_for_models(self, temp_db):
         """Test that running seed script multiple times doesn't create duplicate models."""
