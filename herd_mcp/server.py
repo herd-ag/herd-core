@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib.metadata
 import logging
 import os
+import subprocess
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
 from pathlib import Path
@@ -57,6 +58,22 @@ checkin_registry = CheckinRegistry()
 
 # Global adapter registry (initialized on first access)
 _registry: AdapterRegistry | None = None
+
+# Server start time - captured at module import
+_SERVER_START_TIME: str = datetime.now(timezone.utc).isoformat()
+
+# Running git commit - captured at module import
+try:
+    _RUNNING_COMMIT: str = (
+        subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            stderr=subprocess.DEVNULL,
+        )
+        .decode()
+        .strip()
+    )
+except Exception:
+    _RUNNING_COMMIT = "unknown"
 
 
 def get_adapter_registry() -> AdapterRegistry:
@@ -903,6 +920,8 @@ async def health_check(request: Request) -> JSONResponse:
     return JSONResponse(
         {
             "status": "ok",
+            "server_start_time": _SERVER_START_TIME,
+            "running_commit": _RUNNING_COMMIT,
             "version": "0.2.0",
             "adapters": adapters,
             "stores": stores,
