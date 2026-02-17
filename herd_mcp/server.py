@@ -32,6 +32,7 @@ from .tools import (
     catchup,
     checkin,
     create_ticket,
+    get_messages,
     graph,
     lifecycle,
     list_tickets,
@@ -490,7 +491,7 @@ async def herd_catchup(agent_name: str | None = None) -> dict:
     """
     agent_name = agent_name or get_agent_identity()
     registry = get_adapter_registry()
-    return await catchup.execute(agent_name, registry)
+    return await catchup.execute(agent_name, registry, bus=bus)
 
 
 @mcp.tool()
@@ -782,6 +783,26 @@ async def herd_checkin(
     return await checkin.execute(
         status, agent_name, registry, bus=bus, checkin_registry=checkin_registry
     )
+
+
+@mcp.tool()
+async def herd_get_messages(
+    agent_name: str | None = None,
+) -> dict:
+    """Read pending messages from the message bus for the calling agent.
+
+    Pure inbox drain — no heartbeat, no context pane. Messages are consumed
+    on read (removed from the bus). Mechanical agents (rook, vigil) only
+    receive directive-type messages.
+
+    Args:
+        agent_name: Calling agent identity (falls back to HERD_AGENT_NAME).
+
+    Returns:
+        Dict with agent identity, list of message dicts, and count.
+    """
+    agent_name = agent_name or get_agent_identity()
+    return await get_messages.execute(agent_name, bus=bus)
 
 
 @mcp.tool()

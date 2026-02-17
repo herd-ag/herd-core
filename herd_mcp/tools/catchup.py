@@ -23,10 +23,87 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from herd_mcp.adapters import AdapterRegistry
+    from herd_mcp.bus import MessageBus
 
 # Backward-compatible aliases
 _read_status_md = read_status_md
 _get_git_log = get_git_log
+
+# ---------------------------------------------------------------------------
+# Tier configuration for bus message filtering (mirrors checkin.py)
+# ---------------------------------------------------------------------------
+
+LEADER_AGENTS: frozenset[str] = frozenset({"steve", "leonardo"})
+SENIOR_AGENTS: frozenset[str] = frozenset({"wardenstein", "scribe", "tufte"})
+MECHANICAL_AGENTS: frozenset[str] = frozenset({"rook", "vigil"})
+
+TIER_MESSAGE_TYPES: dict[str, set[str]] = {
+    "leader": {"directive", "inform", "flag"},
+    "senior": {"directive", "inform", "flag"},
+    "execution": {"directive", "inform", "flag"},
+    "mechanical": {"directive"},
+}
+
+
+def _get_tier(agent: str) -> str:
+    """Determine the agent's tier from its code.
+
+    Args:
+        agent: Agent code (e.g. "mason", "steve").
+
+    Returns:
+        Tier string: "leader", "senior", "mechanical", or "execution".
+    """
+    if agent in LEADER_AGENTS:
+        return "leader"
+    if agent in SENIOR_AGENTS:
+        return "senior"
+    if agent in MECHANICAL_AGENTS:
+        return "mechanical"
+    return "execution"
+
+
+async def _drain_pending_messages(
+    agent: str,
+    bus: MessageBus,
+) -> list[dict[str, str]]:
+    """Drain pending messages from the bus for an agent with tier filtering.
+
+    Messages are consumed on read (removed from the bus for direct and
+    @anyone messages, marked as read for @everyone broadcasts).
+
+    Mechanical agents only receive directive-type messages.
+
+    Args:
+        agent: Agent code (e.g. "mason").
+        bus: Message bus instance.
+
+    Returns:
+        List of message dicts with from, to, type, priority, body, sent_at.
+    """
+    instance = os.getenv("HERD_INSTANCE_ID") or None
+    team = os.getenv("HERD_TEAM") or None
+
+    raw_messages = await bus.read(agent, instance, team)
+
+    tier = _get_tier(agent)
+    allowed_types = TIER_MESSAGE_TYPES[tier]
+
+    messages: list[dict[str, str]] = []
+    for msg in raw_messages:
+        if msg.type in allowed_types:
+            messages.append(
+                {
+                    "id": msg.id,
+                    "from": msg.from_addr,
+                    "to": msg.to_addr,
+                    "type": msg.type,
+                    "priority": msg.priority,
+                    "body": msg.body,
+                    "sent_at": msg.sent_at.isoformat(),
+                }
+            )
+    return messages
 
 
 async def _get_linear_tickets(
@@ -178,7 +255,10 @@ def _get_decision_records(
 
 
 async def execute(
-    agent_name: str | None, registry: AdapterRegistry | None = None
+    agent_name: str | None,
+    registry: AdapterRegistry | None = None,
+    *,
+    bus: MessageBus | None = None,
 ) -> dict:
     """Get a summary of what happened since agent was last active.
 
@@ -191,10 +271,12 @@ async def execute(
     - #herd-decisions threads (relevant to agent)
     - Agent decision records from store
     - Graph context (structural neighbors)
+    - Pending bus messages (consumed on read)
 
     Args:
         agent_name: Current agent identity.
         registry: Optional adapter registry for dependency injection.
+        bus: Optional message bus instance for pending message retrieval.
 
     Returns:
         Dict with comprehensive catchup summary.
@@ -218,6 +300,16 @@ async def execute(
         repo_root = repo_root.parent
     else:
         repo_root = Path.cwd()
+
+    # Drain pending bus messages (destructive read — messages are consumed)
+    pending_messages: list[dict[str, str]] = []
+    if bus is not None:
+        try:
+            pending_messages = await _drain_pending_messages(agent_name, bus)
+        except Exception:
+            logger.warning(
+                "Failed to drain pending messages for %s", agent_name, exc_info=True
+            )
 
     # Find the most recent ENDED instance for this agent
     all_instances = store.list(AgentRecord, agent=agent_name)
@@ -288,6 +380,7 @@ async def execute(
             "decision_records": [],
             "semantic_context": semantic_context,
             "graph_context": graph_context,
+            "pending_messages": pending_messages,
         }
 
     previous_instance = ended_instances[0]
@@ -394,6 +487,12 @@ async def execute(
     summary_parts = []
     summary_parts.append(f"Since {ended_at}:")
 
+    if pending_messages:
+        summary_parts.append(
+            f"- {len(pending_messages)} pending message"
+            f"{'s' if len(pending_messages) != 1 else ''}"
+        )
+
     if ticket_updates:
         ticket_count = len({u["ticket"] for u in ticket_updates})
         event_count = len(ticket_updates)
@@ -450,4 +549,5 @@ async def execute(
         "decision_records": decision_records,
         "semantic_context": semantic_context,
         "graph_context": graph_context,
+        "pending_messages": pending_messages,
     }
